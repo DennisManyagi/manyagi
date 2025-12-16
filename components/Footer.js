@@ -51,6 +51,19 @@ const SOCIAL_HANDLES = {
     facebook: "manyagimedia",
     tiktok: "manyagimedia",
   },
+
+  // NEW
+  studios: {
+    label: "Manyagi Studios",
+    instagram: "manyagistudios",
+    twitter: "manyagistudios",
+    youtube: "@manyagistudios",
+    pinterest: "manyagistudios",
+    linkedin: "manyagistudios",
+    facebook: "manyagistudios",
+    tiktok: "manyagistudios",
+  },
+
   capital: {
     label: "Manyagi Capital",
     instagram: "manyagicapital",
@@ -77,18 +90,21 @@ const SOCIAL_HANDLES = {
   },
 };
 
-// ===== Public email per division (homepage uses info@) =====
+// ===== Public email per division =====
 const DIVISION_EMAIL = {
   parent: "info@manyagi.net",
   publishing: "publishing@manyagi.net",
   designs: "designs@manyagi.net",
   media: "media@manyagi.net",
+
+  // NEW
+  studios: "studios@manyagi.net",
+
   capital: "capital@manyagi.net",
   tech: "tech@manyagi.net",
   realty: "realty@manyagi.net",
 };
 
-// ===== Short “blurb” to give billion-dollar-conglomerate energy =====
 const DIVISION_BLURB = {
   parent:
     "Manyagi is a modern creative & capital group building IP, media, brands, and systems across publishing, designs, media, tech, capital, and realty.",
@@ -98,6 +114,8 @@ const DIVISION_BLURB = {
     "Manyagi Designs turns worlds and symbols into apparel, posters, collectibles, and visual identities that feel premium and timeless.",
   media:
     "Manyagi Media documents the build, grows the audience, and distributes our IP through series, shorts, documentaries, and digital storytelling.",
+  studios:
+    "Manyagi Studios is the IP vault: trailers, decks, world lore, and Hollywood-facing presentation per universe.",
   capital:
     "Manyagi Capital focuses on disciplined frameworks for wealth, income, and allocation — treating creators like asset classes, not side projects.",
   tech:
@@ -106,7 +124,6 @@ const DIVISION_BLURB = {
     "Manyagi Realty explores real estate and physical spaces that extend the brand into the real world through stays, sets, and experiences.",
 };
 
-// ===== helpers =====
 function platformUrl(platform, handle) {
   if (!handle) return null;
   switch (platform) {
@@ -142,6 +159,7 @@ export default function Footer({ division: override }) {
     if (p.startsWith("/publishing")) return "publishing";
     if (p.startsWith("/designs"))    return "designs";
     if (p.startsWith("/media"))      return "media";
+    if (p.startsWith("/studios"))    return "studios"; // NEW
     if (p.startsWith("/capital"))    return "capital";
     if (p.startsWith("/tech"))       return "tech";
     if (p.startsWith("/realty"))     return "realty";
@@ -166,7 +184,6 @@ export default function Footer({ division: override }) {
   return (
     <footer className="bg-white text-black border-t border-gray-200">
       <div className="container mx-auto px-4 py-10 grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* About / blurb */}
         <div>
           <h4 className="text-xl font-bold mb-2">
             {division === "parent" ? "Manyagi" : cfg.label}
@@ -174,13 +191,13 @@ export default function Footer({ division: override }) {
           <p className="text-sm text-gray-700">{blurb}</p>
         </div>
 
-        {/* Explore quick links */}
         <div className="text-sm">
           <h5 className="font-semibold mb-2">Explore</h5>
           <ul className="space-y-1">
             <li><Link href="/publishing" className="hover:text-yellow-600">Publishing</Link></li>
             <li><Link href="/designs"    className="hover:text-yellow-600">Designs</Link></li>
             <li><Link href="/media"      className="hover:text-yellow-600">Media</Link></li>
+            <li><Link href="/studios"    className="hover:text-yellow-600">Studios</Link></li> {/* NEW */}
             <li><Link href="/capital"    className="hover:text-yellow-600">Capital</Link></li>
             <li><Link href="/tech"       className="hover:text-yellow-600">Tech</Link></li>
             <li><Link href="/realty"     className="hover:text-yellow-600">Realty</Link></li>
@@ -188,7 +205,6 @@ export default function Footer({ division: override }) {
           </ul>
         </div>
 
-        {/* Contact + socials */}
         <div className="text-sm">
           <h5 className="font-semibold mb-2 flex items-center gap-2">
             <FaEnvelope /> Contact
@@ -216,7 +232,6 @@ export default function Footer({ division: override }) {
         </div>
       </div>
 
-      {/* Legal row + tagline */}
       <div className="border-t border-gray-200">
         <div className="container mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-gray-700">
           <div>© {new Date().getFullYear()} {cfg.label}. All rights reserved.</div>

@@ -1,7 +1,7 @@
 # PROJECT DUMP
 # Root: /home/blackkungfu/manyagi
-# Generated: 2025-11-19 01:30:59.039217
-# Limits: total≈300.0MB, per-file≈1000KB
+# Generated: 2025-12-16 12:23:23.664597
+# Limits: NO LIMITS (danger: huge output possible)
 # Skips: .cache, .git, .husky, .next, .turbo, .venv, .vercel, .vscode, _scanscratch, build, coverage, cypress, dist, node_modules, out, playwright, scan_reports, venv
 # Lockfiles excluded: bun.lockb, package-lock.json, package.lock.json, pnpm-lock.yaml, yarn.lock
 # ENV INCLUDED: NO (use --include-env to include .env files)
@@ -297,7 +297,6 @@ manyagi/
 ├── package-lock.json  (not dumped)
 ├── package.json
 ├── postcss.config.js
-├── requirements.txt
 ├── tailwind.config.js
 └── tsconfig.json
 
@@ -7009,8 +7008,7 @@ class ErrorBoundary extends React.Component {
 export default ErrorBoundary;
 
 
-===== FILE: components/Footer.js  (size=8443 bytes) =====
-// components/Footer.js
+===== FILE: components/Footer.js  (size=8760 bytes) =====
 import Link from "next/link";
 import { useRouter } from "next/router";
 import {
@@ -7024,7 +7022,7 @@ import {
   FaEnvelope,
 } from "react-icons/fa";
 
-// ===== Social handles you provided =====
+// ===== Social handles (parent + divisions) =====
 const SOCIAL_HANDLES = {
   parent: {
     label: "Manyagi",
@@ -7101,22 +7099,22 @@ const DIVISION_EMAIL = {
   realty: "realty@manyagi.net",
 };
 
-// ===== Short “blurb” to add context + pizazz =====
+// ===== Short “blurb” to give billion-dollar-conglomerate energy =====
 const DIVISION_BLURB = {
   parent:
-    "Manyagi is a creative technology company building IP across publishing, media, commerce, capital, tech, and realty.",
+    "Manyagi is a modern creative & capital group building IP, media, brands, and systems across publishing, designs, media, tech, capital, and realty.",
   publishing:
-    "Original fiction, poetry, and world-building IP — released as ebooks, print, and collectors’ editions.",
+    "Manyagi Publishing develops original fiction, poetry, and story universes engineered for long-term readership and cross-media adaptation.",
   designs:
-    "Wear the worlds we build — tees, posters, mugs, and collectibles inspired by our stories.",
+    "Manyagi Designs turns worlds and symbols into apparel, posters, collectibles, and visual identities that feel premium and timeless.",
   media:
-    "Shorts, reels, and long-form content documenting how we build a modern IP studio in public.",
+    "Manyagi Media documents the build, grows the audience, and distributes our IP through series, shorts, documentaries, and digital storytelling.",
   capital:
-    "The creator’s capital desk — systematic trading and portfolio construction, shared transparently.",
+    "Manyagi Capital focuses on disciplined frameworks for wealth, income, and allocation — treating creators like asset classes, not side projects.",
   tech:
-    "Sites, tools, automations — shipping product daily and showing our work along the way.",
+    "Manyagi Tech ships the infrastructure: sites, apps, tools, and automations powering the Manyagi ecosystem and future platforms.",
   realty:
-    "Story-inspired stays and property content in destinations we love.",
+    "Manyagi Realty explores real estate and physical spaces that extend the brand into the real world through stays, sets, and experiences.",
 };
 
 // ===== helpers =====
@@ -7206,7 +7204,10 @@ export default function Footer({ division: override }) {
           <h5 className="font-semibold mb-2 flex items-center gap-2">
             <FaEnvelope /> Contact
           </h5>
-          <a href={`mailto:${email}`} className="underline hover:text-yellow-600 break-all">
+          <a
+            href={`mailto:${email}`}
+            className="underline hover:text-yellow-600 break-all"
+          >
             {email}
           </a>
           <div className="mt-4 flex flex-wrap gap-3 text-xl">
@@ -7226,7 +7227,7 @@ export default function Footer({ division: override }) {
         </div>
       </div>
 
-      {/* Legal row + tagline moved from Header to Footer */}
+      {/* Legal row + tagline */}
       <div className="border-t border-gray-200">
         <div className="container mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-gray-700">
           <div>© {new Date().getFullYear()} {cfg.label}. All rights reserved.</div>
@@ -9324,14 +9325,16 @@ export default function Document() {
 }
 
 
-===== FILE: pages/about.js  (size=7330 bytes) =====
+===== FILE: pages/about.js  (size=9121 bytes) =====
 import Head from 'next/head';
 import Link from 'next/link';
+import { useEffect } from 'react'; // ✅ ADDED
 import SubscriptionForm from '../components/SubscriptionForm';
 import Recommender from '../components/Recommender';
 import Hero from '../components/Hero';
 import SectionIntro from '../components/SectionIntro';
 import Card from '../components/Card';
+import { supabase } from '../lib/supabase'; // ✅ ADDED
 
 export default function About() {
   const carouselImages = [
@@ -9339,21 +9342,45 @@ export default function About() {
     'https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/team-photo.webp',
   ];
 
+  // ✅ REWARD: first visit to About page
+  useEffect(() => {
+    (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const userId = session?.user?.id;
+        if (!userId) return;
+
+        await fetch('/api/rewards/grant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            action: 'visit_about_first_time',
+          }),
+        });
+      } catch (err) {
+        console.error('[About] visit_about_first_time reward error', err);
+      }
+    })();
+  }, []);
+
   return (
     <>
       <Head>
-        <title>About Manyagi — Creativity Meets Innovation</title>
+        <title>About Manyagi — A Modern Creative & Capital Group</title>
         <meta
           name="description"
-          content="Manyagi is a multi-division brand uniting creativity, technology, design, and digital culture under one vision."
+          content="Manyagi LLC is a multi-division creative, media, capital, and technology group building stories, products, and platforms designed to scale globally."
         />
       </Head>
 
       {/* HERO */}
       <Hero
         kicker="About Manyagi"
-        title="Creativity Meets Innovation."
-        lead="A modern, multi-division brand where storytelling, digital products, and design work together under one unified vision."
+        title="A Modern Creative & Capital Conglomerate."
+        lead="Manyagi unites publishing, design, media, capital, tech, and realty into one connected ecosystem designed for long-term IP, cash flow, and global scale."
         carouselImages={carouselImages}
         height="h-[600px]"
       >
@@ -9370,13 +9397,15 @@ export default function About() {
         id="story"
         kicker="A Unified Vision"
         title="Who We Are"
-        lead="Manyagi is a creative-led, innovation-focused company building meaningful products, stories, and digital experiences."
+        lead="Manyagi LLC is a creator-led, systems-driven company focused on turning ideas into durable intellectual property, products, and platforms."
         tone="neutral"
         align="center"
       >
         <p className="text-sm md:text-base mt-3 max-w-3xl mx-auto">
-          From digital platforms and creative publishing to apparel, media, and future-facing technology,
-          Manyagi brings ideas to life in ways that feel thoughtful, refined, and built for the long term.
+          We operate like a modern studio and holding company in one. Under the Manyagi umbrella, we build
+          stories, brands, financial engines, and digital infrastructure that work together instead of
+          competing for attention. From novels and apparel to media channels, software, and capital strategies,
+          every division is designed to feed the rest of the ecosystem and compound over time.
         </p>
       </SectionIntro>
 
@@ -9385,7 +9414,7 @@ export default function About() {
         id="divisions"
         kicker="A Manyagi Company"
         title="Our Divisions"
-        lead="Each division contributes to a connected ecosystem built on quality, innovation, and culture."
+        lead="Each division is a standalone brand with a shared backbone: world-class storytelling, clean design, smart systems, and disciplined capital."
         tone="card"
         align="center"
       />
@@ -9395,8 +9424,8 @@ export default function About() {
 
           <Card
             title="Publishing"
-            description="Stories, literature, and creative works that inspire imagination and explore new worlds."
-            image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/publishing.webp"
+            description="Original IP across fiction, poetry, and worlds designed for adaptation into books, film, animation, games, and long-term franchises."
+            image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/book-carousel-1.webp"
             category="publishing"
           >
             <p className="text-xs text-gray-500 font-mono">publishing@manyagi.net</p>
@@ -9404,8 +9433,8 @@ export default function About() {
 
           <Card
             title="Designs"
-            description="Visual identities, apparel, and branded assets that give ideas a distinct and memorable look."
-            image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/designs.webp"
+            description="Apparel, posters, collectibles, and brand systems that let people wear the worlds, symbols, and stories that define the Manyagi Universe."
+            image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/merch-carousel-1.webp"
             category="designs"
           >
             <p className="text-xs text-gray-500 font-mono">designs@manyagi.net</p>
@@ -9413,7 +9442,7 @@ export default function About() {
 
           <Card
             title="Tech"
-            description="Digital experiences, platforms, and apps built with a focus on usability, community, and modern innovation."
+            description="Websites, apps, automation, and internal tools that power our brands, storefronts, communities, and future platforms."
             image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/app-carousel-1.webp"
             category="tech"
           >
@@ -9422,8 +9451,8 @@ export default function About() {
 
           <Card
             title="Media"
-            description="Video, audio, and visual storytelling tailored for today’s digital-first audiences."
-            image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/media.webp"
+            description="Faceless and branded channels, shorts, series, and documentaries that show the process, promote the IP, and build the audience in public."
+            image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/merch-carousel-4.webp"
             category="media"
           >
             <p className="text-xs text-gray-500 font-mono">media@manyagi.net</p>
@@ -9431,8 +9460,8 @@ export default function About() {
 
           <Card
             title="Capital"
-            description="A forward-looking division focused on financial literacy, stewardship, and sustainable growth principles."
-            image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/capital.webp"
+            description="A disciplined capital desk focused on long-term investing, income streams, and frameworks for creators and builders to grow real wealth."
+            image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/site/general/2025/11/6R5CJc-blackkungfu_stock_market_thumbnail_-v_7_fed2b20f-2a5b-451e-9c24-c790004e0a43_2.png"
             category="capital"
           >
             <p className="text-xs text-gray-500 font-mono">capital@manyagi.net</p>
@@ -9440,8 +9469,8 @@ export default function About() {
 
           <Card
             title="Realty"
-            description="Exploring real estate and future physical spaces that complement our digital ecosystem."
-            image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/realty.webp"
+            description="Real estate concepts and future physical spaces that extend the Manyagi brand into the offline world through stays, sets, and experiences."
+            image="https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/og-realty.webp"
             category="realty"
           >
             <p className="text-xs text-gray-500 font-mono">realty@manyagi.net</p>
@@ -9452,29 +9481,28 @@ export default function About() {
       {/* BRAND VALUES */}
       <SectionIntro
         id="values"
-        kicker="Our Values"
+        kicker="Our Operating System"
         title="What We Stand For"
-        lead="Principles that guide how we build, collaborate, and show up across every division."
+        lead="These principles are baked into every story, product, partnership, and investment decision we make."
         tone="neutral"
         align="center"
       />
 
       <section className="container mx-auto px-4 pb-20">
-        {/* Center the row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto text-sm md:text-base">
           <div className="rounded-3xl border bg-white/90 dark:bg-gray-950/90 p-5 shadow-sm text-center">
-            <h3 className="font-semibold mb-2">Integrity</h3>
-            <p>We build with honesty, clarity, and consistency.</p>
+            <h3 className="font-semibold mb-2">Craft & Clarity</h3>
+            <p>We obsess over the details but ship with intention, making things that feel sharp, timeless, and easy to understand.</p>
           </div>
 
           <div className="rounded-3xl border bg-white/90 dark:bg-gray-950/90 p-5 shadow-sm text-center">
-            <h3 className="font-semibold mb-2">Innovation</h3>
-            <p>We use modern tools, thoughtful design, and long-term thinking.</p>
+            <h3 className="font-semibold mb-2">Systems & Scale</h3>
+            <p>We design brands, products, and workflows to compound over years, not weeks — with automation and leverage built in.</p>
           </div>
 
           <div className="rounded-3xl border bg-white/90 dark:bg-gray-950/90 p-5 shadow-sm text-center">
-            <h3 className="font-semibold mb-2">Community</h3>
-            <p>We build products and stories that connect people and ideas.</p>
+            <h3 className="font-semibold mb-2">Ownership & Community</h3>
+            <p>We believe creators should own their worlds, and audiences should feel like they’re part of something bigger than a single product.</p>
           </div>
         </div>
       </section>
@@ -9482,14 +9510,14 @@ export default function About() {
       {/* CONTACT CTA */}
       <SectionIntro
         id="contact"
-        kicker="Reach Out"
-        title="Get in Touch"
-        lead="Have a project, question, or collaboration idea? We’d love to hear from you."
+        kicker="Partnerships, Publishing & Beyond"
+        title="Connect with the Manyagi Team"
+        lead="Whether you’re a reader, investor, creator, or collaborator, we’d love to explore what we can build together."
         tone="card"
         align="center"
         maxWidth="max-w-2xl"
       >
-        <p className="text-xs text-gray-500 font-mono">contact@manyagi.net</p>
+        <p className="text-xs text-gray-500 font-mono">info@manyagi.net</p>
       </SectionIntro>
 
       {/* NEWSLETTER */}
@@ -9498,7 +9526,7 @@ export default function About() {
           formId="8427853"
           uid="637df68a06"
           title="Stay Connected"
-          description="Get updates, releases, and highlights from across the Manyagi ecosystem."
+          description="Get launches, behind-the-scenes building, and cross-division updates from the Manyagi ecosystem."
         />
       </section>
 
@@ -14788,7 +14816,7 @@ export default function ComingSoon() {
 };
 
 
-===== FILE: pages/contact.js  (size=7292 bytes) =====
+===== FILE: pages/contact.js  (size=7553 bytes) =====
 import Head from 'next/head';
 import { useForm, ValidationError } from '@formspree/react';
 import SubscriptionForm from '../components/SubscriptionForm';
@@ -14806,10 +14834,10 @@ export default function Contact() {
   return (
     <>
       <Head>
-        <title>Contact Manyagi — Get in Touch</title>
+        <title>Contact Manyagi — Global Creative & Capital Group</title>
         <meta
           name="description"
-          content="Reach out to Manyagi for general questions, collaborations, and division-specific inquiries."
+          content="Contact Manyagi LLC for publishing, media, design, tech, capital, and realty collaborations, partnerships, and general inquiries."
         />
       </Head>
 
@@ -14817,7 +14845,7 @@ export default function Contact() {
       <Hero
         kicker="Contact"
         title="Get in Touch with Manyagi"
-        lead="Questions, ideas, or collaborations — we’d love to hear from you."
+        lead="Partnerships, licensing, publishing, media, tech, and capital — this is your direct line into the Manyagi ecosystem."
         carouselImages={carouselImages}
         height="h-[500px]"
       />
@@ -14826,8 +14854,8 @@ export default function Contact() {
       <SectionIntro
         id="contact-overview"
         kicker="Start a Conversation"
-        title="Talk to the Right Team"
-        lead="Use the form below for general inquiries, or reach out directly to a specific division using the emails listed."
+        title="Talk to the Right Division"
+        lead="Use the form below for general inquiries, or reach out directly to a specific division using the dedicated emails."
         tone="neutral"
         align="center"
         maxWidth="max-w-3xl"
@@ -14838,50 +14866,50 @@ export default function Contact() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
           {/* General */}
           <div className="rounded-2xl border bg-white/90 dark:bg-gray-950/90 p-4 shadow-sm text-center">
-            <h3 className="font-semibold mb-1">General</h3>
-            <p className="text-xs text-gray-500 mb-2">Questions &amp; inquiries</p>
+            <h3 className="font-semibold mb-1">General / HQ</h3>
+            <p className="text-xs text-gray-500 mb-2">Group-level questions &amp; opportunities</p>
             <p className="font-mono text-xs break-all">info@manyagi.net</p>
           </div>
 
           {/* Publishing */}
           <div className="rounded-2xl border bg-white/90 dark:bg-gray-950/90 p-4 shadow-sm text-center">
             <h3 className="font-semibold mb-1">Publishing</h3>
-            <p className="text-xs text-gray-500 mb-2">Books, writing, and content</p>
+            <p className="text-xs text-gray-500 mb-2">Books, IP, adaptations &amp; rights</p>
             <p className="font-mono text-xs break-all">publishing@manyagi.net</p>
           </div>
 
           {/* Designs */}
           <div className="rounded-2xl border bg-white/90 dark:bg-gray-950/90 p-4 shadow-sm text-center">
             <h3 className="font-semibold mb-1">Designs</h3>
-            <p className="text-xs text-gray-500 mb-2">Branding, visuals, apparel</p>
+            <p className="text-xs text-gray-500 mb-2">Branding, visuals, apparel &amp; merch</p>
             <p className="font-mono text-xs break-all">designs@manyagi.net</p>
           </div>
 
           {/* Media */}
           <div className="rounded-2xl border bg-white/90 dark:bg-gray-950/90 p-4 shadow-sm text-center">
             <h3 className="font-semibold mb-1">Media</h3>
-            <p className="text-xs text-gray-500 mb-2">Video, audio, digital content</p>
+            <p className="text-xs text-gray-500 mb-2">Content, channels, and campaigns</p>
             <p className="font-mono text-xs break-all">media@manyagi.net</p>
           </div>
 
           {/* Tech */}
           <div className="rounded-2xl border bg-white/90 dark:bg-gray-950/90 p-4 shadow-sm text-center">
             <h3 className="font-semibold mb-1">Tech</h3>
-            <p className="text-xs text-gray-500 mb-2">Apps, platforms, web projects</p>
+            <p className="text-xs text-gray-500 mb-2">Apps, platforms, web &amp; integrations</p>
             <p className="font-mono text-xs break-all">tech@manyagi.net</p>
           </div>
 
           {/* Capital */}
           <div className="rounded-2xl border bg-white/90 dark:bg-gray-950/90 p-4 shadow-sm text-center">
             <h3 className="font-semibold mb-1">Capital</h3>
-            <p className="text-xs text-gray-500 mb-2">Finance &amp; strategic growth</p>
+            <p className="text-xs text-gray-500 mb-2">Capital, strategy &amp; financial collaborations</p>
             <p className="font-mono text-xs break-all">capital@manyagi.net</p>
           </div>
 
           {/* Realty */}
           <div className="rounded-2xl border bg-white/90 dark:bg-gray-950/90 p-4 shadow-sm text-center">
             <h3 className="font-semibold mb-1">Realty</h3>
-            <p className="text-xs text-gray-500 mb-2">Real estate &amp; future spaces</p>
+            <p className="text-xs text-gray-500 mb-2">Real estate &amp; physical brand concepts</p>
             <p className="font-mono text-xs break-all">realty@manyagi.net</p>
           </div>
         </div>
@@ -14892,7 +14920,7 @@ export default function Contact() {
         id="form"
         kicker="Contact Form"
         title="Send Us a Message"
-        lead="Prefer a single channel? Use this form and we’ll route your note to the right place."
+        lead="If you’re not sure where your message fits, use this form — we’ll route it to the right division internally."
         tone="card"
         align="center"
         maxWidth="max-w-2xl"
@@ -14949,7 +14977,7 @@ export default function Contact() {
 
             {state.succeeded && (
               <p className="mt-2 text-sm text-green-600">
-                Thanks for your message — we’ll get back to you soon.
+                Thanks for your message — the Manyagi team will get back to you soon.
               </p>
             )}
           </form>
@@ -14962,7 +14990,7 @@ export default function Contact() {
           formId="8427853"
           uid="637df68a06"
           title="Stay Connected"
-          description="Get updates, releases, and insights from across the Manyagi ecosystem."
+          description="Join the Manyagi ecosystem for launch announcements, opportunities, and cross-division updates."
         />
       </section>
 
@@ -17016,7 +17044,7 @@ export default function Home() {
 }
 
 
-===== FILE: pages/links.js  (size=3725 bytes) =====
+===== FILE: pages/links.js  (size=4585 bytes) =====
 import Head from 'next/head';
 import Link from 'next/link';
 import { FaInstagram, FaTiktok, FaYoutube, FaTwitter, FaLinkedin, FaPinterest } from 'react-icons/fa';
@@ -17026,21 +17054,21 @@ import Hero from '../components/Hero';
 
 export default function Links() {
   const socialLinks = [
-    { platform: 'Instagram', handle: 'https://instagram.com/manyagi.official', icon: <FaInstagram size={24} /> },
+    { platform: 'Instagram', handle: 'https://instagram.com/manyagiofficial', icon: <FaInstagram size={24} /> },
     { platform: 'Twitter', handle: 'https://x.com/ManyagiOfficial', icon: <FaTwitter size={24} /> },
     { platform: 'YouTube', handle: 'https://youtube.com/@ManyagiOfficial', icon: <FaYoutube size={24} /> },
-    { platform: 'LinkedIn', handle: 'https://linkedin.com/company/manyagi', icon: <FaLinkedin size={24} /> },
+    { platform: 'LinkedIn', handle: 'https://linkedin.com/company/manyagiofficial', icon: <FaLinkedin size={24} /> },
     { platform: 'Pinterest', handle: 'https://pinterest.com/ManyagiOfficial', icon: <FaPinterest size={24} /> },
-    { platform: 'TikTok', handle: 'https://tiktok.com/@manyagi.official', icon: <FaTiktok size={24} /> },
+    { platform: 'TikTok', handle: 'https://tiktok.com/@manyagiofficial', icon: <FaTiktok size={24} /> },
   ];
 
   const divisionLinks = [
-    { name: 'Publishing', url: '/publishing', description: 'Novels and poetry' },
-    { name: 'Designs', url: '/designs', description: 'T-shirts, mugs, and prints' },
-    { name: 'Capital', url: '/capital', description: 'Trading signals and bots' },
-    { name: 'Tech', url: '/tech', description: 'Innovative apps' },
-    { name: 'Media', url: '/media', description: 'Videos and audio' },
-    { name: 'Realty', url: '/realty', description: 'Premium properties' },
+    { name: 'Publishing', url: '/publishing', description: 'Novels, poetry, and IP ready for adaptation.' },
+    { name: 'Designs', url: '/designs', description: 'Story-driven apparel, art prints, and merch.' },
+    { name: 'Capital', url: '/capital', description: 'Long-term investing, frameworks, and capital labs.' },
+    { name: 'Tech', url: '/tech', description: 'Web, apps, automation, and digital infrastructure.' },
+    { name: 'Media', url: '/media', description: 'Content, documentaries, and distribution channels.' },
+    { name: 'Realty', url: '/realty', description: 'Real estate and physical experiences (future-facing).' },
   ];
 
   const carouselImages = [
@@ -17050,19 +17078,25 @@ export default function Links() {
   return (
     <>
       <Head>
-        <title>Manyagi Links — Connect with Us</title>
-        <meta name="description" content="Find all our social media and division links." />
+        <title>Manyagi Links — Connect with the Manyagi Ecosystem</title>
+        <meta
+          name="description"
+          content="All official Manyagi links in one place — social channels, divisions, and ways to plug into the Manyagi ecosystem."
+        />
       </Head>
       <Hero
         kicker="Links"
-        title="Connect with Manyagi"
-        lead="Explore our social media and divisions."
+        title="Connect with the Manyagi Ecosystem"
+        lead="Follow the journey, explore each division, and plug into the worlds we’re building."
         carouselImages={carouselImages}
         height="h-[600px]"
       />
 
       <section className="container mx-auto px-4 py-16">
         <h2 className="text-3xl font-bold mb-6 text-center">Social Media</h2>
+        <p className="text-center text-sm text-gray-600 max-w-xl mx-auto mb-6">
+          These are the official Manyagi channels for announcements, behind-the-scenes building, and new releases.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
           {socialLinks.map((link) => (
             <a
@@ -17070,7 +17104,7 @@ export default function Links() {
               href={link.handle}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 p-4 border rounded hover:bg-gray-100"
+              className="flex items-center gap-2 p-4 border rounded-lg hover:bg-gray-100 transition"
             >
               {link.icon}
               <span>{link.platform}</span>
@@ -17081,15 +17115,18 @@ export default function Links() {
 
       <section className="container mx-auto px-4 py-16">
         <h2 className="text-3xl font-bold mb-6 text-center">Our Divisions</h2>
+        <p className="text-center text-sm text-gray-600 max-w-xl mx-auto mb-6">
+          Explore each Manyagi division as its own doorway into the larger empire — different focus, same DNA.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
           {divisionLinks.map((link) => (
             <Link
               key={link.name}
               href={link.url}
-              className="p-4 border rounded hover:bg-gray-100"
+              className="p-4 border rounded-lg hover:bg-gray-100 transition"
             >
               <h3 className="text-xl font-bold">{link.name}</h3>
-              <p className="text-gray-600">{link.description}</p>
+              <p className="text-gray-600 text-sm mt-1">{link.description}</p>
             </Link>
           ))}
         </div>
@@ -17100,7 +17137,7 @@ export default function Links() {
           formId="8427853"
           uid="637df68a06"
           title="Stay Connected"
-          description="Join our community for updates and insights."
+          description="Join our list for new drops, launches, and ecosystem-wide updates from Manyagi."
         />
       </section>
 
@@ -20397,12 +20434,6 @@ Host: https://manyagi.net
 
 # Sitemaps
 Sitemap: https://manyagi.net/sitemap.xml
-
-
-===== FILE: requirements.txt  (size=51 bytes) =====
-requests==2.32.3
-colorama==0.4.6
-graphviz==0.20.3
 
 
 ===== FILE: styles/globals.css  (size=3958 bytes) =====

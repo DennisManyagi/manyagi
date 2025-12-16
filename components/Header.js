@@ -16,6 +16,11 @@ const Header = () => {
 
   useEffect(() => setMounted(true), []);
 
+  const linkClass = (href) => {
+    const active = router.pathname === href || router.pathname.startsWith(`${href}/`);
+    return `hover:text-yellow-500 transition ${active ? 'text-yellow-600 font-semibold' : ''}`;
+  };
+
   return (
     <header className="sticky top-0 bg-white z-50 border-b border-gray-300 text-black">
       <div className="container mx-auto flex items-center justify-between py-4 px-4 md:px-8 flex-col md:flex-row">
@@ -34,18 +39,25 @@ const Header = () => {
 
         {/* Navigation */}
         <nav className="flex flex-wrap gap-4 md:gap-6 items-center justify-center md:justify-end mt-4 md:mt-0">
-          <Link href="/" className="hover:text-yellow-500 transition">Home</Link>
-          <Link href="/publishing" className="hover:text-yellow-500 transition">Publishing</Link>
-          <Link href="/designs" className="hover:text-yellow-500 transition">Designs</Link>
-          <Link href="/media" className="hover:text-yellow-500 transition">Media</Link>
-          <Link href="/capital" className="hover:text-yellow-500 transition">Capital</Link>
-          <Link href="/tech" className="hover:text-yellow-500 transition">Tech</Link>
-          <Link href="/realty" className="hover:text-yellow-500 transition">Realty</Link>
-          <Link href="/blog" className="hover:text-yellow-500 transition">Blog</Link>
-          <Link href="/about" className="hover:text-yellow-500 transition">About</Link>
-          <Link href="/contact" className="hover:text-yellow-500 transition">Contact</Link>
-          <Link href="/links" className="hover:text-yellow-500 transition">Links</Link>
-          <Link href="/admin" className="hover:text-yellow-500 transition bg-blue-100 px-2 py-1 rounded">Admin</Link>
+          <Link href="/" className={linkClass('/')}>Home</Link>
+          <Link href="/publishing" className={linkClass('/publishing')}>Publishing</Link>
+          <Link href="/designs" className={linkClass('/designs')}>Designs</Link>
+          <Link href="/media" className={linkClass('/media')}>Media</Link>
+
+          {/* NEW */}
+          <Link href="/studios" className={linkClass('/studios')}>Studios</Link>
+
+          <Link href="/capital" className={linkClass('/capital')}>Capital</Link>
+          <Link href="/tech" className={linkClass('/tech')}>Tech</Link>
+          <Link href="/realty" className={linkClass('/realty')}>Realty</Link>
+          <Link href="/blog" className={linkClass('/blog')}>Blog</Link>
+          <Link href="/about" className={linkClass('/about')}>About</Link>
+          <Link href="/contact" className={linkClass('/contact')}>Contact</Link>
+          <Link href="/links" className={linkClass('/links')}>Links</Link>
+
+          <Link href="/admin" className="hover:text-yellow-500 transition bg-blue-100 px-2 py-1 rounded">
+            Admin
+          </Link>
 
           {/* Cart */}
           <Link href="/cart" className="relative hover:text-yellow-500 transition">

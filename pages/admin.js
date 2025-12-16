@@ -19,6 +19,9 @@ import UsersTab from '@/components/admin/UsersTab';
 import AnalyticsTab from '@/components/admin/AnalyticsTab';
 import EventsTab from '@/components/admin/EventsTab';
 
+// NEW
+import UniversesTab from '@/components/admin/UniversesTab';
+
 // arrivals / upcoming stays dashboard
 import UpcomingStaysPanel from '@/components/admin/UpcomingStaysPanel';
 
@@ -221,6 +224,7 @@ export default function Admin() {
   // tab labels
   const tabs = [
     'overview',
+    'universes', // NEW
     'publishing',
     'designs',
     'capital',
@@ -266,6 +270,10 @@ export default function Admin() {
           />
         )}
 
+        {activeTab === 'universes' && (
+          <UniversesTab />
+        )}
+
         {activeTab === 'publishing' && (
           <PublishingTab products={products} refreshAll={refreshAll} />
         )}
@@ -273,7 +281,7 @@ export default function Admin() {
         {activeTab === 'designs' && (
           <DesignsTab
             products={products}
-            assets={assets}          // pass assets for Recent Uploads + copy URLs
+            assets={assets}
             refreshAll={refreshAll}
           />
         )}
@@ -291,15 +299,12 @@ export default function Admin() {
         )}
 
         {activeTab === 'realty' && (
-          <>
-            {/* Pass captured leads into RealtyTab without inline prop comments */}
-            <RealtyTab
-              properties={properties}
-              assets={assets}
-              leads={realtyLeads}
-              refreshAll={refreshAll}
-            />
-          </>
+          <RealtyTab
+            properties={properties}
+            assets={assets}
+            leads={realtyLeads}
+            refreshAll={refreshAll}
+          />
         )}
 
         {activeTab === 'upcoming' && (
