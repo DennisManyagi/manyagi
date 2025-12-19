@@ -22,6 +22,9 @@ import EventsTab from '@/components/admin/EventsTab';
 // NEW
 import UniversesTab from '@/components/admin/UniversesTab';
 
+// ✅ NEW: Studio Pages tab
+import StudioPagesTab from '@/components/admin/StudioPagesTab';
+
 // arrivals / upcoming stays dashboard
 import UpcomingStaysPanel from '@/components/admin/UpcomingStaysPanel';
 
@@ -225,6 +228,7 @@ export default function Admin() {
   const tabs = [
     'overview',
     'universes', // NEW
+    'studioPages', // ✅ NEW
     'publishing',
     'designs',
     'capital',
@@ -270,9 +274,10 @@ export default function Admin() {
           />
         )}
 
-        {activeTab === 'universes' && (
-          <UniversesTab />
-        )}
+        {activeTab === 'universes' && <UniversesTab />}
+
+        {/* ✅ NEW */}
+        {activeTab === 'studioPages' && <StudioPagesTab />}
 
         {activeTab === 'publishing' && (
           <PublishingTab products={products} refreshAll={refreshAll} />
@@ -290,13 +295,9 @@ export default function Admin() {
           <CapitalTab products={products} refreshAll={refreshAll} />
         )}
 
-        {activeTab === 'tech' && (
-          <TechTab posts={posts} refreshAll={refreshAll} />
-        )}
+        {activeTab === 'tech' && <TechTab posts={posts} refreshAll={refreshAll} />}
 
-        {activeTab === 'media' && (
-          <MediaTab posts={posts} refreshAll={refreshAll} />
-        )}
+        {activeTab === 'media' && <MediaTab posts={posts} refreshAll={refreshAll} />}
 
         {activeTab === 'realty' && (
           <RealtyTab
@@ -338,17 +339,11 @@ export default function Admin() {
           />
         )}
 
-        {activeTab === 'users' && (
-          <UsersTab users={users} refreshAll={refreshAll} />
-        )}
+        {activeTab === 'users' && <UsersTab users={users} refreshAll={refreshAll} />}
 
-        {activeTab === 'analytics' && (
-          <AnalyticsTab users={users} orders={orders} />
-        )}
+        {activeTab === 'analytics' && <AnalyticsTab users={users} orders={orders} />}
 
-        {activeTab === 'events' && (
-          <EventsTab events={events} refreshAll={refreshAll} />
-        )}
+        {activeTab === 'events' && <EventsTab events={events} refreshAll={refreshAll} />}
       </div>
     </>
   );
