@@ -1,33 +1,47 @@
+// components/admin/MediaTab.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import MediaShowcaseForm from "@/components/admin/MediaShowcaseForm";
 import SectionCard from "@/components/admin/SectionCard";
 import { safeJSON } from "@/lib/adminUtils";
 
 /**
- * STATE OF THE ART MEDIA ADMIN (Audio-first)
- * - Upload MP3/WAV to Supabase Storage (drag/drop + picker)
- * - Optional thumbnail upload (image) attached to the audio
- * - Creates Posts (division=media) so it instantly appears on /media + media.js
- * - Also creates Assets (division=media) so it appears in Recent Uploads
- * - Enforces audio-only (mp3/wav) for song uploads
- * - Inline preview player + duration auto-detect (best-effort)
- * - Search, filters, “Suno drop” workflow
+ * MANYAGI MEDIA TAB (Audio-first, works with /media posts)
+ * ✅ Upload MP3/WAV to Supabase Storage bucket: "assets"
+ * ✅ Optional thumbnail upload (image) tied to the track
+ * ✅ Auto-creates:
+ *    1) assets row (division=media, file_type=audio) for Recent Audio Uploads
+ *    2) posts row (division=media, status=published) so it appears on /media
  *
- * Assumptions:
- * - posts table exists with: title, slug, excerpt, content, division, status, metadata, thumbnail_url, featured_image
- * - assets table exists with: division, file_url, file_type, filename, purpose, tags, metadata
- * - Supabase Storage bucket exists (default BUCKET="public")
+ * FIXES INCLUDED:
+ * - Stops "PGRST204 Could not find column ..." spam by not selecting missing columns to detect schema.
+ * - Detects posts columns safely via select('*') and checking returned keys.
+ * - Writes thumbnail ALWAYS to metadata.thumbnail_url, and only to post columns if they truly exist.
+ * - Adds CRUD for Recent Audio Uploads (assets table): edit tags/thumb, delete duplicates, optional delete from Storage.
  */
 
-const BUCKET = "public"; // <-- change to your bucket name if needed (e.g. "assets")
+const BUCKET = "assets";
 const AUDIO_PREFIX = "media/audio";
 const THUMB_PREFIX = "media/thumbs";
 
 const AUDIO_EXTS = ["mp3", "wav"];
 const IMG_EXTS = ["jpg", "jpeg", "png", "webp"];
 
-const MEDIA_TYPES = ["soundtrack", "score", "chapter_read", "scene", "podcast", "interview", "event", "playlist"];
+const MEDIA_TYPES = [
+  "soundtrack",
+  "score",
+  "opening_theme",
+  "ending_theme",
+  "character_theme",
+  "battle_theme",
+  "chapter_read",
+  "scene",
+  "podcast",
+  "interview",
+  "event",
+  "playlist",
+  "trailer",
+  "musicvideo",
+];
 
 const PLATFORMS = ["Suno", "YouTube", "Spotify", "SoundCloud", "Apple Music", "Other"];
 
@@ -49,55 +63,13 @@ function extOf(name = "") {
 function isAudioFile(fileOrUrl) {
   if (!fileOrUrl) return false;
   const s = typeof fileOrUrl === "string" ? fileOrUrl : fileOrUrl.name;
-  const e = extOf(s);
-  return AUDIO_EXTS.includes(e);
+  return AUDIO_EXTS.includes(extOf(s));
 }
 
 function isImageFile(fileOrUrl) {
   if (!fileOrUrl) return false;
   const s = typeof fileOrUrl === "string" ? fileOrUrl : fileOrUrl.name;
-  const e = extOf(s);
-  return IMG_EXTS.includes(e);
-}
-
-function publicUrlFor(path) {
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return data?.publicUrl || "";
-}
-
-async function getAudioDurationSeconds(url) {
-  // best-effort duration sniff using HTMLAudioElement (works if CORS/public)
-  return new Promise((resolve) => {
-    try {
-      const a = new Audio();
-      a.preload = "metadata";
-      a.src = url;
-      const cleanup = () => {
-        a.onloadedmetadata = null;
-        a.onerror = null;
-      };
-      a.onloadedmetadata = () => {
-        const d = Number(a.duration);
-        cleanup();
-        if (!Number.isFinite(d) || d <= 0) return resolve(null);
-        resolve(d);
-      };
-      a.onerror = () => {
-        cleanup();
-        resolve(null);
-      };
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
-function formatDuration(sec) {
-  if (!Number.isFinite(sec) || sec <= 0) return "";
-  const s = Math.round(sec);
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${String(r).padStart(2, "0")}`;
+  return IMG_EXTS.includes(extOf(s));
 }
 
 function MiniChip({ children }) {
@@ -120,34 +92,117 @@ function CopyBtn({ text, label = "Copy" }) {
   );
 }
 
-function buildMetaFromQuick(q = {}) {
-  // Only allow audio_url to be mp3/wav; if not, drop it.
-  const audio_url = q.audio_url?.trim() || "";
-  const cleanedAudio = isAudioFile(audio_url) ? audio_url : "";
+function toTagsArray(tags) {
+  if (Array.isArray(tags)) return tags.filter(Boolean);
+  if (!tags) return [];
+  return String(tags)
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
 
-  let tags = q.tags;
-  if (typeof tags === "string") {
-    tags = tags
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
-  }
+function buildMeta({
+  media_type,
+  platform,
+  audio_url,
+  media_url,
+  duration,
+  mood,
+  scene,
+  book,
+  universe,
+  tags,
+  download_url,
+  license_url,
+  thumbnail_url,
+} = {}) {
+  const tagsArr = toTagsArray(tags);
+  const cleanedAudio = isAudioFile(audio_url || "") ? (audio_url || "").trim() : "";
 
   return {
-    media_type: q.media_type || "soundtrack",
-    platform: q.platform || "Suno",
+    media_type: media_type || "soundtrack",
+    platform: platform || "Suno",
     audio_url: cleanedAudio,
-    media_url: q.media_url?.trim() || "",
-    duration: q.duration || "",
-    mood: q.mood || "",
-    scene: q.scene || "",
-    book: q.book || "",
-    series: q.series || "",
-    universe: q.universe || "",
-    download_url: q.download_url?.trim() || "",
-    license_url: q.license_url?.trim() || "",
-    tags: Array.isArray(tags) ? tags : [],
+    media_url: (media_url || "").trim(),
+    duration: duration || "",
+    mood: mood || "",
+    scene: scene || "",
+    book: book || "",
+    universe: universe || book || "",
+    download_url: (download_url || "").trim(),
+    license_url: (license_url || "").trim(),
+    thumbnail_url: (thumbnail_url || "").trim(), // ALWAYS safe in metadata
+    tags: tagsArr,
   };
+}
+
+function formatDuration(sec) {
+  if (!Number.isFinite(sec) || sec <= 0) return "";
+  const s = Math.round(sec);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+async function getAudioDurationSeconds(url) {
+  return new Promise((resolve) => {
+    try {
+      const a = new Audio();
+      a.preload = "metadata";
+      a.src = url;
+      const done = (v) => {
+        a.onloadedmetadata = null;
+        a.onerror = null;
+        resolve(v);
+      };
+      a.onloadedmetadata = () => {
+        const d = Number(a.duration);
+        if (!Number.isFinite(d) || d <= 0) return done(null);
+        done(d);
+      };
+      a.onerror = () => done(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function extractThumbFromPost(post, rowOverride = {}) {
+  const m = post?.metadata || {};
+  const row = rowOverride || {};
+  return (
+    (row.thumbnail_url ?? "").trim() ||
+    (row.featured_image ?? "").trim() ||
+    (post.thumbnail_url ?? "").trim() ||
+    (post.featured_image ?? "").trim() ||
+    (m.thumbnail_url ?? "").trim() ||
+    ""
+  );
+}
+
+function extractStoragePathFromPublicUrl(url) {
+  // Example:
+  // https://xxxx.supabase.co/storage/v1/object/public/assets/media/audio/123_file.mp3
+  // -> "media/audio/123_file.mp3"
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    const marker = `/storage/v1/object/public/${BUCKET}/`;
+    const idx = u.pathname.indexOf(marker);
+    if (idx === -1) return "";
+    return decodeURIComponent(u.pathname.slice(idx + marker.length));
+  } catch {
+    // fallback string parse
+    const marker = `/storage/v1/object/public/${BUCKET}/`;
+    const idx = String(url).indexOf(marker);
+    if (idx === -1) return "";
+    return decodeURIComponent(String(url).slice(idx + marker.length).split("?")[0]);
+  }
+}
+
+async function getPublicUrl(bucket, path) {
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data?.publicUrl || "";
 }
 
 export default function MediaTab({ posts: allPosts, refreshAll }) {
@@ -161,15 +216,12 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // Browse
+  // browse
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [platformFilter, setPlatformFilter] = useState("ALL");
 
-  // Editor state per post
-  const [edits, setEdits] = useState({});
-
-  // Upload panel state
+  // upload panel
   const [audioFile, setAudioFile] = useState(null);
   const [thumbFile, setThumbFile] = useState(null);
   const [uploadPct, setUploadPct] = useState(0);
@@ -182,22 +234,62 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
   const [newScene, setNewScene] = useState("");
   const [newTags, setNewTags] = useState("suno, cinematic");
 
+  // editor state per post
+  const [edits, setEdits] = useState({});
+
+  // assets CRUD state
+  const [assetEdits, setAssetEdits] = useState({});
+  const [deleteFromStorage, setDeleteFromStorage] = useState(true);
+
   const audioInputRef = useRef(null);
   const thumbInputRef = useRef(null);
   const dropRef = useRef(null);
 
-  useEffect(() => {
-    (async () => {
-      const { data, error } = await supabase
-        .from("assets")
-        .select("*")
-        .eq("division", "media")
-        .order("created_at", { ascending: false })
-        .limit(75);
+  // posts columns support (safe detection)
+  const [postsCols, setPostsCols] = useState({
+    thumbnail_url: false,
+    featured_image: false,
+    published_at: false,
+  });
 
-      if (error) console.error(error);
-      setMediaAssets(data || []);
-    })();
+  async function detectPostsColumns() {
+    // SAFEST detection: ask for '*' and inspect keys.
+    // If RLS blocks select, we avoid assuming columns exist (so we don't write them).
+    try {
+      const { data, error } = await supabase.from("posts").select("*").limit(1);
+      if (error) {
+        // If this errors, it's commonly RLS. Safer to not write optional columns.
+        setPostsCols({ thumbnail_url: false, featured_image: false, published_at: false });
+        return;
+      }
+      const row = (data && data[0]) || {};
+      const keys = new Set(Object.keys(row || {}));
+      setPostsCols({
+        thumbnail_url: keys.has("thumbnail_url"),
+        featured_image: keys.has("featured_image"),
+        published_at: keys.has("published_at"),
+      });
+    } catch {
+      setPostsCols({ thumbnail_url: false, featured_image: false, published_at: false });
+    }
+  }
+
+  async function refreshAssets() {
+    const { data, error } = await supabase
+      .from("assets")
+      .select("*")
+      .eq("division", "media")
+      .order("created_at", { ascending: false })
+      .limit(250);
+
+    if (error) console.error(error);
+    setMediaAssets(data || []);
+  }
+
+  useEffect(() => {
+    detectPostsColumns();
+    refreshAssets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function setRow(postId, patch) {
@@ -215,7 +307,6 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
     const row = getRow(post);
     const base = post.metadata || {};
     const merged = { ...base, ...(row.metaQuick || {}) };
-    // normalize tags back to string for UI
     const tags = merged.tags;
     return {
       media_type: merged.media_type || "",
@@ -226,10 +317,10 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
       mood: merged.mood || "",
       scene: merged.scene || "",
       book: merged.book || "",
-      series: merged.series || "",
       universe: merged.universe || "",
       download_url: merged.download_url || "",
       license_url: merged.license_url || "",
+      thumbnail_url: merged.thumbnail_url || "",
       tags: Array.isArray(tags) ? tags.join(", ") : tags || "",
     };
   }
@@ -242,14 +333,30 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
     });
   }
 
+  // assets edits helpers
+  function setAssetRow(assetId, patch) {
+    setAssetEdits((prev) => {
+      const row = prev[assetId] || {};
+      return { ...prev, [assetId]: { ...row, ...patch } };
+    });
+  }
+  function getAssetRow(assetId) {
+    return assetEdits[assetId] || {};
+  }
+
   const filteredPosts = useMemo(() => {
     let list = [...mediaPosts];
 
     if (typeFilter !== "ALL") {
-      list = list.filter((p) => String(p?.metadata?.media_type || "").toLowerCase() === typeFilter.toLowerCase());
+      list = list.filter(
+        (p) => String(p?.metadata?.media_type || "").toLowerCase() === typeFilter.toLowerCase()
+      );
     }
+
     if (platformFilter !== "ALL") {
-      list = list.filter((p) => String(p?.metadata?.platform || "").toLowerCase() === platformFilter.toLowerCase());
+      list = list.filter(
+        (p) => String(p?.metadata?.platform || "").toLowerCase() === platformFilter.toLowerCase()
+      );
     }
 
     if (q.trim()) {
@@ -266,10 +373,10 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
           m.audio_url,
           m.media_url,
           m.book,
-          m.series,
           m.universe,
           m.scene,
           m.mood,
+          m.thumbnail_url,
           Array.isArray(m.tags) ? m.tags.join(", ") : m.tags,
         ]
           .filter(Boolean)
@@ -279,21 +386,18 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
       });
     }
 
-    // IMPORTANT: show only items whose audio is mp3/wav (or external link)
-    // We will hide "image-only" posts from MediaTab to keep it audio-clean.
+    // audio-clean view: must have mp3/wav audio_url OR external media_url
     list = list.filter((p) => {
       const m = p.metadata || {};
       const a = String(m.audio_url || "").trim();
       const u = String(m.media_url || "").trim();
-      const okAudio = a ? isAudioFile(a) : false;
-      const okExternal = !!u; // allow Spotify/YT links
-      return okAudio || okExternal;
+      return (a && isAudioFile(a)) || !!u;
     });
 
     return list;
   }, [mediaPosts, q, typeFilter, platformFilter]);
 
-  // Drag/drop handlers (audio required)
+  // drag/drop
   useEffect(() => {
     const el = dropRef.current;
     if (!el) return;
@@ -318,16 +422,12 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
       const img = files.find((f) => isImageFile(f));
 
       if (!aud) {
-        setNotice({ type: "error", msg: "Drop an MP3 or WAV file (audio uploads are restricted to mp3/wav)." });
+        setNotice({ type: "error", msg: "Drop an MP3 or WAV file." });
         return;
       }
       setAudioFile(aud);
       if (img) setThumbFile(img);
-
-      if (!newTitle) {
-        const base = aud.name.replace(/\.[^/.]+$/, "");
-        setNewTitle(base);
-      }
+      if (!newTitle) setNewTitle(aud.name.replace(/\.[^/.]+$/, ""));
     };
 
     el.addEventListener("dragover", onDragOver);
@@ -344,20 +444,23 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
     const cleanName = file.name.replace(/[^\w.\-]+/g, "_");
     const path = `${prefix}/${Date.now()}_${Math.random().toString(16).slice(2)}_${cleanName}`;
 
-    // Use upsert to avoid collisions; cache control ok
     const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
       cacheControl: "3600",
       upsert: true,
       contentType: file.type || undefined,
     });
 
-    if (error) throw error;
-    return { path, url: publicUrlFor(path) };
+    if (error) {
+      console.error("Storage upload error:", error);
+      throw new Error(`${error.message} (bucket="${BUCKET}", path="${path}")`);
+    }
+
+    const url = await getPublicUrl(BUCKET, path);
+    if (!url) throw new Error("Upload succeeded but public URL was empty.");
+    return { path, url };
   }
 
   async function createAssetRow({ audioUrl, thumbUrl, audioFilename, tagsArr }) {
-    // Keep an assets row for “Recent Uploads” browsing / copy URL workflow
-    // file_type should be "audio" for mp3/wav
     const payload = {
       division: "media",
       file_url: audioUrl,
@@ -369,13 +472,16 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
     };
 
     const { error } = await supabase.from("assets").insert(payload);
-    if (error) console.error("assets insert error", error);
+    if (error) {
+      console.error("assets insert error", error);
+      // don't hard-fail; the file is already in Storage
+    }
   }
 
   async function createMediaPost({ title, audioUrl, thumbUrl, durationStr }) {
     const slug = slugify(`${title}-${Date.now().toString().slice(-5)}`);
 
-    const meta = buildMetaFromQuick({
+    const meta = buildMeta({
       media_type: newType,
       platform: newPlatform,
       audio_url: audioUrl,
@@ -383,50 +489,57 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
       mood: newMood,
       scene: newScene,
       book: newIP,
-      series: "",
       universe: newIP,
       tags: newTags,
-      media_url: "",
-      download_url: "",
-      license_url: "",
+      thumbnail_url: thumbUrl || "",
     });
 
-    // Thumbnail must be allowed only if tied to audio.
     const payload = {
       division: "media",
       status: "published",
       title: title || "Untitled Track",
       slug,
-      excerpt: `${meta.media_type || "soundtrack"} • ${meta.platform || "Suno"}${meta.duration ? ` • ${meta.duration}` : ""}`,
+      excerpt: `${meta.media_type || "soundtrack"} • ${meta.platform || "Suno"}${
+        meta.duration ? ` • ${meta.duration}` : ""
+      }`,
       content: meta.scene || meta.mood || "",
-      thumbnail_url: thumbUrl || null,
-      featured_image: thumbUrl || null, // legacy
       metadata: meta,
+      // Only include columns if they exist (detected safely)
+      ...(postsCols.thumbnail_url ? { thumbnail_url: thumbUrl || null } : {}),
+      ...(postsCols.featured_image ? { featured_image: thumbUrl || null } : {}),
+      ...(postsCols.published_at ? { published_at: new Date().toISOString() } : {}),
     };
 
     const { error } = await supabase.from("posts").insert(payload);
-    if (error) throw error;
+    if (error) {
+      console.error("posts insert error payload:", payload);
+      console.error("posts insert error:", error);
+
+      // Helpful message if it's likely RLS
+      const msg = String(error.message || "");
+      const code = String(error.code || "");
+      if (msg.toLowerCase().includes("row level security") || code === "42501") {
+        throw new Error(
+          "Posts insert blocked by RLS. Add an insert policy for authenticated admin users on posts."
+        );
+      }
+
+      throw new Error(error.message || "Failed to insert into posts");
+    }
   }
 
   async function handleUploadCreate() {
     try {
       setNotice(null);
 
-      if (!audioFile) {
-        setNotice({ type: "error", msg: "Select an MP3 or WAV file first." });
-        return;
-      }
-      if (!isAudioFile(audioFile)) {
-        setNotice({ type: "error", msg: "Only MP3/WAV uploads are allowed." });
-        return;
-      }
-      if (thumbFile && !isImageFile(thumbFile)) {
-        setNotice({ type: "error", msg: "Thumbnail must be an image (jpg/png/webp)." });
-        return;
-      }
+      if (!audioFile) return setNotice({ type: "error", msg: "Select an MP3 or WAV file first." });
+      if (!isAudioFile(audioFile))
+        return setNotice({ type: "error", msg: "Only MP3/WAV uploads are allowed." });
+      if (thumbFile && !isImageFile(thumbFile))
+        return setNotice({ type: "error", msg: "Thumbnail must be an image (jpg/png/webp)." });
 
       setBusy(true);
-      setUploadPct(5);
+      setUploadPct(8);
 
       // 1) upload audio
       const { url: audioUrl } = await uploadToStorage(audioFile, AUDIO_PREFIX);
@@ -440,59 +553,43 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
       }
       setUploadPct(70);
 
-      // 3) try to determine duration
+      // 3) sniff duration
       let durationStr = "";
       const sec = await getAudioDurationSeconds(audioUrl);
       if (sec) durationStr = formatDuration(sec);
-
       setUploadPct(82);
 
-      // 4) insert assets row (recent uploads)
-      const tagsArr = newTags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
+      // 4) assets row
+      const tagsArr = toTagsArray(newTags);
+      await createAssetRow({ audioUrl, thumbUrl, audioFilename: audioFile.name, tagsArr });
 
-      await createAssetRow({
-        audioUrl,
-        thumbUrl,
-        audioFilename: audioFile.name,
-        tagsArr,
-      });
-
-      // 5) create post (so it appears on /media)
+      // 5) post row (this is what was failing for you)
       const title = (newTitle || audioFile.name.replace(/\.[^/.]+$/, "")).trim();
       await createMediaPost({ title, audioUrl, thumbUrl, durationStr });
 
       setUploadPct(100);
 
-      // refresh
+      // reset UI
       setAudioFile(null);
       setThumbFile(null);
       setNewTitle("");
       setNewMood("");
       setNewScene("");
       setNewIP("");
-      setNotice({ type: "ok", msg: "Uploaded + created a Media post. Your track should now appear on /media." });
 
-      // reload assets list
-      const { data } = await supabase
-        .from("assets")
-        .select("*")
-        .eq("division", "media")
-        .order("created_at", { ascending: false })
-        .limit(75);
-      setMediaAssets(data || []);
+      setNotice({ type: "ok", msg: `Uploaded + created Media Post (bucket "${BUCKET}").` });
 
+      await refreshAssets();
       refreshAll?.();
     } catch (e) {
       setNotice({ type: "error", msg: `Upload failed: ${e.message}` });
     } finally {
       setBusy(false);
-      setTimeout(() => setUploadPct(0), 600);
+      setTimeout(() => setUploadPct(0), 700);
     }
   }
 
+  // POSTS CRUD
   async function save(post) {
     try {
       setNotice(null);
@@ -500,30 +597,28 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
       if (!Object.keys(row).length) return;
 
       let mergedMeta = post.metadata || {};
-
       if (row.metadataStr !== undefined) mergedMeta = safeJSON(row.metadataStr, mergedMeta);
-      if (row.metaQuick) mergedMeta = { ...mergedMeta, ...buildMetaFromQuick(row.metaQuick) };
+      if (row.metaQuick) mergedMeta = { ...mergedMeta, ...buildMeta(row.metaQuick) };
 
-      // enforce mp3/wav for audio_url if present
-      if (mergedMeta.audio_url && !isAudioFile(mergedMeta.audio_url)) {
-        mergedMeta.audio_url = "";
-      }
+      // enforce mp3/wav
+      if (mergedMeta.audio_url && !isAudioFile(mergedMeta.audio_url)) mergedMeta.audio_url = "";
 
-      // thumbnail is only allowed if there is audio_url (or media_url)
-      const hasAudio = !!mergedMeta.audio_url;
-      const hasExternal = !!mergedMeta.media_url;
-
-      const thumb = row.thumbnail_url ?? row.featured_image ?? post.thumbnail_url ?? post.featured_image ?? "";
-      const allowThumb = (hasAudio || hasExternal) && thumb;
+      // if user typed thumb URL, keep metadata.thumbnail_url in sync
+      if (row.thumbnail_url !== undefined) mergedMeta.thumbnail_url = String(row.thumbnail_url || "").trim();
+      if (row.featured_image !== undefined) mergedMeta.thumbnail_url = String(row.featured_image || "").trim();
 
       const payload = {
         ...(row.title !== undefined ? { title: row.title } : {}),
         ...(row.slug !== undefined ? { slug: row.slug } : {}),
         ...(row.excerpt !== undefined ? { excerpt: row.excerpt } : {}),
         ...(row.content !== undefined ? { content: row.content } : {}),
-        ...(row.thumbnail_url !== undefined ? { thumbnail_url: allowThumb ? row.thumbnail_url : null } : {}),
-        ...(row.featured_image !== undefined ? { featured_image: allowThumb ? row.featured_image : null } : {}),
         metadata: mergedMeta,
+        ...(postsCols.thumbnail_url && row.thumbnail_url !== undefined
+          ? { thumbnail_url: row.thumbnail_url || null }
+          : {}),
+        ...(postsCols.featured_image && row.featured_image !== undefined
+          ? { featured_image: row.featured_image || null }
+          : {}),
       };
 
       const { error } = await supabase.from("posts").update(payload).eq("id", post.id);
@@ -550,18 +645,88 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
     }
   }
 
-  function copyAudioUrlFromAsset(a) {
-    navigator.clipboard?.writeText?.(a.file_url || "");
-    setNotice({ type: "ok", msg: "Copied audio URL." });
+  // ASSETS CRUD (Recent Audio Uploads)
+  async function saveAsset(asset) {
+    try {
+      setNotice(null);
+      const row = getAssetRow(asset.id);
+      if (!Object.keys(row).length) return;
+
+      const nextTags = row.tagsStr !== undefined ? toTagsArray(row.tagsStr) : asset.tags || [];
+      const nextThumb =
+        row.thumbStr !== undefined ? String(row.thumbStr || "").trim() : asset?.metadata?.thumbnail_url || "";
+
+      const payload = {
+        ...(row.filename !== undefined ? { filename: row.filename } : {}),
+        ...(row.purpose !== undefined ? { purpose: row.purpose } : {}),
+        ...(row.file_url !== undefined ? { file_url: row.file_url } : {}),
+        ...(row.file_type !== undefined ? { file_type: row.file_type } : {}),
+        tags: nextTags,
+        metadata: { ...(asset.metadata || {}), ...(nextThumb ? { thumbnail_url: nextThumb } : { thumbnail_url: "" }) },
+      };
+
+      const { error } = await supabase.from("assets").update(payload).eq("id", asset.id);
+      if (error) throw error;
+
+      setAssetEdits((prev) => ({ ...prev, [asset.id]: {} }));
+      await refreshAssets();
+      setNotice({ type: "ok", msg: "Asset saved." });
+    } catch (e) {
+      setNotice({ type: "error", msg: `Asset save failed: ${e.message}` });
+    }
   }
+
+  async function deleteAsset(asset) {
+    const ok = confirm(
+      `Delete this asset row${deleteFromStorage ? " AND delete file from Storage" : ""}?`
+    );
+    if (!ok) return;
+
+    try {
+      setNotice(null);
+
+      // optionally delete storage object first
+      if (deleteFromStorage) {
+        const path = extractStoragePathFromPublicUrl(asset.file_url || "");
+        if (path) {
+          const { error: rmErr } = await supabase.storage.from(BUCKET).remove([path]);
+          if (rmErr) {
+            // don't block DB delete; but warn
+            console.error("storage remove error", rmErr);
+          }
+        }
+      }
+
+      const { error } = await supabase.from("assets").delete().eq("id", asset.id);
+      if (error) throw error;
+
+      await refreshAssets();
+      setNotice({ type: "ok", msg: "Asset deleted." });
+    } catch (e) {
+      setNotice({ type: "error", msg: `Asset delete failed: ${e.message}` });
+    }
+  }
+
+  const audioAssets = useMemo(() => {
+    return (mediaAssets || []).filter((a) => a.file_type === "audio" && isAudioFile(a.file_url || ""));
+  }, [mediaAssets]);
+
+  const duplicatesSummary = useMemo(() => {
+    const map = new Map();
+    for (const a of audioAssets) {
+      const key = (a.filename || a.file_url || "").toLowerCase().trim();
+      if (!key) continue;
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    const dups = Array.from(map.entries())
+      .filter(([, count]) => count > 1)
+      .sort((a, b) => b[1] - a[1]);
+    return dups.slice(0, 8);
+  }, [audioAssets]);
 
   return (
     <SectionCard title="Media (Audio Studio)">
-      {/* keep your create form if you still use it */}
-      <MediaShowcaseForm onCreated={refreshAll} />
-
-      {/* Notice */}
-      {notice?.msg && (
+      {notice?.msg ? (
         <div
           className={`mt-4 rounded-xl border p-3 text-sm ${
             notice.type === "error"
@@ -571,7 +736,7 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
         >
           {notice.msg}
         </div>
-      )}
+      ) : null}
 
       {/* UPLOAD STUDIO */}
       <div className="mt-6 rounded-3xl border border-amber-100/80 dark:border-gray-800 bg-white/70 dark:bg-gray-900/60 p-5 md:p-6 shadow-sm">
@@ -580,8 +745,16 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
             <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Suno Workflow</div>
             <h3 className="text-xl md:text-2xl font-bold mt-1">Upload a Track (MP3/WAV)</h3>
             <p className="text-xs opacity-70 mt-1">
-              Audio-only uploads. Thumbnails are optional and only displayed if attached to a song.
+              Uploads go to bucket <b>{BUCKET}</b>. Thumbnails are optional and stored in{" "}
+              <code>metadata.thumbnail_url</code> (and in post columns only if they exist).
             </p>
+            <div className="text-[11px] opacity-60 mt-2">
+              Posts columns detected:{" "}
+              <span className="font-semibold">
+                thumbnail_url={String(postsCols.thumbnail_url)} • featured_image={String(postsCols.featured_image)} •
+                published_at={String(postsCols.published_at)}
+              </span>
+            </div>
           </div>
 
           <div className="flex gap-2 flex-wrap">
@@ -591,7 +764,6 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
           </div>
         </div>
 
-        {/* Dropzone */}
         <div
           ref={dropRef}
           className="mt-4 rounded-3xl border border-dashed border-gray-300 dark:border-gray-700 bg-white/60 dark:bg-gray-950/20 p-5"
@@ -626,14 +798,12 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (!f) return;
-                  if (!isAudioFile(f)) {
-                    setNotice({ type: "error", msg: "Only MP3 or WAV allowed." });
-                    return;
-                  }
+                  if (!isAudioFile(f)) return setNotice({ type: "error", msg: "Only MP3 or WAV allowed." });
                   setAudioFile(f);
                   if (!newTitle) setNewTitle(f.name.replace(/\.[^/.]+$/, ""));
                 }}
               />
+
               <input
                 ref={thumbInputRef}
                 type="file"
@@ -642,16 +812,13 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (!f) return;
-                  if (!isImageFile(f)) {
-                    setNotice({ type: "error", msg: "Thumbnail must be jpg/png/webp." });
-                    return;
-                  }
+                  if (!isImageFile(f)) return setNotice({ type: "error", msg: "Thumbnail must be jpg/png/webp." });
                   setThumbFile(f);
                 }}
               />
             </div>
 
-            <div className="min-w-[280px] w-full md:w-[340px]">
+            <div className="min-w-[280px] w-full md:w-[360px]">
               <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/40 p-4">
                 <div className="text-xs opacity-70">Selected</div>
                 <div className="mt-2 text-sm">
@@ -665,12 +832,6 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                   </div>
                 </div>
 
-                {audioFile ? (
-                  <div className="mt-3 text-xs opacity-70">
-                    Tip: keep names clean. Your title + slug are generated from the track name.
-                  </div>
-                ) : null}
-
                 {busy && uploadPct ? (
                   <div className="mt-4">
                     <div className="text-xs opacity-70 mb-1">Uploading… {uploadPct}%</div>
@@ -683,7 +844,6 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
             </div>
           </div>
 
-          {/* Meta fields */}
           <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-[10px] opacity-70">Title</label>
@@ -691,7 +851,7 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                 className="w-full dark:bg-gray-800 text-sm rounded-xl px-3 py-2 border border-gray-200 dark:border-gray-700"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="Opening Theme"
+                placeholder="Main Theme — Legacy of the Hidden Clans"
               />
             </div>
 
@@ -720,6 +880,7 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                   ))}
                 </select>
               </div>
+
               <div>
                 <label className="block text-[10px] opacity-70">Platform</label>
                 <select
@@ -742,7 +903,7 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                 className="w-full dark:bg-gray-800 text-sm rounded-xl px-3 py-2 border border-gray-200 dark:border-gray-700"
                 value={newMood}
                 onChange={(e) => setNewMood(e.target.value)}
-                placeholder="mystical, triumphant, tense…"
+                placeholder="epic, mystical, tragic…"
               />
             </div>
 
@@ -752,7 +913,7 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                 className="w-full dark:bg-gray-800 text-sm rounded-xl px-3 py-2 border border-gray-200 dark:border-gray-700"
                 value={newScene}
                 onChange={(e) => setNewScene(e.target.value)}
-                placeholder="Chapter 1 — Opening Theme"
+                placeholder="Opening credits theme. Establishes mythic scale…"
               />
             </div>
 
@@ -762,7 +923,7 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                 className="w-full dark:bg-gray-800 text-sm rounded-xl px-3 py-2 border border-gray-200 dark:border-gray-700"
                 value={newTags}
                 onChange={(e) => setNewTags(e.target.value)}
-                placeholder="suno, cinematic, fantasy"
+                placeholder="main-theme, opening-credits, dark-fantasy…"
               />
             </div>
           </div>
@@ -795,14 +956,14 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
             </button>
 
             <div className="text-xs opacity-70 flex flex-wrap gap-2">
-              <MiniChip>Audio goes to: {AUDIO_PREFIX}/…</MiniChip>
-              <MiniChip>Thumb goes to: {THUMB_PREFIX}/…</MiniChip>
+              <MiniChip>Audio path: {AUDIO_PREFIX}/…</MiniChip>
+              <MiniChip>Thumb path: {THUMB_PREFIX}/…</MiniChip>
             </div>
           </div>
         </div>
       </div>
 
-      {/* BROWSE CONTROLS */}
+      {/* BROWSE */}
       <div className="mt-8 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/60 p-4">
         <div className="flex flex-col md:flex-row gap-3 md:items-end md:justify-between">
           <div className="flex-1">
@@ -851,22 +1012,50 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
             Showing <b>{filteredPosts.length}</b> / {mediaPosts.length} (audio-clean)
           </div>
         </div>
-
-        <div className="mt-3 text-xs opacity-80 flex flex-wrap gap-2">
-          <MiniChip>Uploads restricted to MP3/WAV</MiniChip>
-          <MiniChip>Thumbnails only show if tied to a song</MiniChip>
-          <MiniChip>Auto-post creation = instant /media visibility</MiniChip>
-        </div>
       </div>
 
-      {/* RECENT UPLOADS (assets table) */}
+      {/* RECENT UPLOADS (ASSETS CRUD) */}
       <div className="mt-10">
-        <div className="flex items-end justify-between gap-3">
+        <div className="flex items-end justify-between gap-3 flex-wrap">
           <div>
             <h3 className="font-semibold mb-1">Recent Audio Uploads</h3>
             <p className="text-xs opacity-70">
-              Shows only assets where <code>file_type=audio</code> and URL ends with mp3/wav.
+              Shows assets where <code>division=media</code> and <code>file_type=audio</code>. You can edit + delete
+              duplicates here.
             </p>
+
+            {duplicatesSummary.length ? (
+              <div className="mt-2 text-[11px] opacity-70">
+                <span className="font-semibold">Duplicates detected:</span>{" "}
+                {duplicatesSummary.map(([k, c]) => (
+                  <span key={k} className="ml-2">
+                    <MiniChip>
+                      {c}× {k.slice(0, 26)}
+                      {k.length > 26 ? "…" : ""}
+                    </MiniChip>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="text-xs opacity-80 flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={deleteFromStorage}
+                onChange={(e) => setDeleteFromStorage(e.target.checked)}
+              />
+              Delete file from Storage too
+            </label>
+
+            <button
+              type="button"
+              className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/30 text-sm font-semibold"
+              onClick={refreshAssets}
+            >
+              Refresh
+            </button>
           </div>
         </div>
 
@@ -879,55 +1068,93 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                 <th className="px-3">Thumb</th>
                 <th className="px-3">Tags</th>
                 <th className="px-3">URL</th>
-                <th className="px-3">Copy</th>
+                <th className="px-3">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {mediaAssets.length ? (
-                mediaAssets
-                  .filter((a) => {
-                    const url = a.file_url || "";
-                    const ok = isAudioFile(url);
-                    return a.file_type === "audio" && ok;
-                  })
-                  .map((a) => {
-                    const url = a.file_url || "";
-                    const thumb = a?.metadata?.thumbnail_url || "";
-                    return (
-                      <tr key={a.id} className="border-b dark:border-gray-800 align-top">
-                        <td className="py-2 px-3">
-                          <div className="w-[260px] max-w-full">
-                            <audio controls className="w-full">
-                              <source src={url} />
-                            </audio>
-                          </div>
-                        </td>
-                        <td className="py-2 px-3">{a.filename || "—"}</td>
-                        <td className="py-2 px-3">
-                          {thumb ? (
-                            <img src={thumb} className="w-12 h-12 object-cover rounded" alt="" />
+              {audioAssets.length ? (
+                audioAssets.map((a) => {
+                  const url = a.file_url || "";
+                  const thumb = a?.metadata?.thumbnail_url || "";
+                  const row = getAssetRow(a.id);
+
+                  const filenameVal = row.filename ?? a.filename ?? "";
+                  const tagsVal =
+                    row.tagsStr ?? (Array.isArray(a.tags) && a.tags.length ? a.tags.join(", ") : "");
+                  const thumbVal = row.thumbStr ?? thumb;
+
+                  return (
+                    <tr key={a.id} className="border-b dark:border-gray-800 align-top">
+                      <td className="py-2 px-3">
+                        <div className="w-[260px] max-w-full">
+                          <audio controls className="w-full">
+                            <source src={url} />
+                          </audio>
+                        </div>
+                        <div className="mt-2 text-[11px] opacity-60">id: {a.id}</div>
+                      </td>
+
+                      <td className="py-2 px-3 min-w-[240px]">
+                        <input
+                          className="w-full dark:bg-gray-800 text-xs rounded-lg px-2 py-1 border border-gray-200 dark:border-gray-700"
+                          value={filenameVal}
+                          onChange={(e) => setAssetRow(a.id, { filename: e.target.value })}
+                          placeholder="filename.mp3"
+                        />
+                      </td>
+
+                      <td className="py-2 px-3 min-w-[220px]">
+                        <div className="flex items-center gap-2">
+                          {thumbVal ? (
+                            <img src={thumbVal} className="w-10 h-10 object-cover rounded" alt="" />
                           ) : (
-                            <span className="text-xs opacity-60">—</span>
+                            <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-800" />
                           )}
-                        </td>
-                        <td className="py-2 px-3">
-                          {Array.isArray(a.tags) && a.tags.length ? a.tags.join(", ") : "—"}
-                        </td>
-                        <td className="py-2 px-3 max-w-[420px] truncate">{url}</td>
-                        <td className="py-2 px-3 space-y-1">
+                          <input
+                            className="w-full dark:bg-gray-800 text-xs rounded-lg px-2 py-1 border border-gray-200 dark:border-gray-700"
+                            value={thumbVal}
+                            onChange={(e) => setAssetRow(a.id, { thumbStr: e.target.value })}
+                            placeholder="https://.../thumb.webp (optional)"
+                          />
+                        </div>
+                      </td>
+
+                      <td className="py-2 px-3 min-w-[260px]">
+                        <input
+                          className="w-full dark:bg-gray-800 text-xs rounded-lg px-2 py-1 border border-gray-200 dark:border-gray-700"
+                          value={tagsVal}
+                          onChange={(e) => setAssetRow(a.id, { tagsStr: e.target.value })}
+                          placeholder="comma, tags"
+                        />
+                      </td>
+
+                      <td className="py-2 px-3 max-w-[420px]">
+                        <div className="truncate">{url}</div>
+                        <div className="mt-1 flex gap-3 flex-wrap">
                           <CopyBtn text={url} label="Copy URL" />
-                          {thumb ? <CopyBtn text={thumb} label="Copy Thumb URL" /> : null}
-                          <button
-                            type="button"
-                            className="text-blue-600 underline text-xs"
-                            onClick={() => copyAudioUrlFromAsset(a)}
-                          >
-                            Copy for audio_url
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
+                          {thumbVal ? <CopyBtn text={thumbVal} label="Copy Thumb" /> : null}
+                        </div>
+                      </td>
+
+                      <td className="py-2 px-3 space-y-2 min-w-[160px]">
+                        <button
+                          type="button"
+                          className="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+                          onClick={() => saveAsset(a)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="px-3 py-1 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700"
+                          onClick={() => deleteAsset(a)}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td className="py-6 px-3 opacity-70" colSpan={6}>
@@ -940,7 +1167,7 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
         </div>
       </div>
 
-      {/* SHOWCASE POSTS (posts table) */}
+      {/* POSTS LIST */}
       <div className="mt-10">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h3 className="font-semibold mb-1">Media Posts (what appears on /media)</h3>
@@ -952,6 +1179,10 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
             <div className="rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center bg-white/70 dark:bg-gray-900/50">
               <div className="text-lg font-bold">No media posts yet</div>
               <div className="opacity-80 mt-2">Upload a track above to auto-create one.</div>
+              <div className="opacity-70 mt-1 text-sm">
+                If uploads show under “Recent Audio Uploads” but not here, the <b>posts insert</b> is failing (likely RLS
+                or schema mismatch).
+              </div>
             </div>
           ) : (
             filteredPosts.map((p) => {
@@ -962,15 +1193,8 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
               const mediaUrl = (row?.metaQuick?.media_url ?? quick.media_url ?? "").trim();
               const effective = audioUrl || mediaUrl;
 
-              // thumbs only shown if tied to audio/external
-              const thumb =
-                row.thumbnail_url ??
-                row.featured_image ??
-                p.thumbnail_url ??
-                p.featured_image ??
-                "";
-
-              const showThumb = !!thumb && (!!effective);
+              const thumb = extractThumbFromPost(p, row);
+              const showThumb = !!thumb && !!effective;
 
               return (
                 <div
@@ -1022,7 +1246,6 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                     </div>
                   </div>
 
-                  {/* Player (only direct mp3/wav) */}
                   {effective && isAudioFile(effective) ? (
                     <div className="mt-4 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/20 p-3">
                       <div className="text-[10px] opacity-70 mb-1">Preview</div>
@@ -1031,7 +1254,7 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                       </audio>
                       <div className="mt-2 flex gap-3 flex-wrap">
                         <CopyBtn text={effective} label="Copy audio_url" />
-                        {thumb ? <CopyBtn text={thumb} label="Copy thumbnail_url" /> : null}
+                        {thumb ? <CopyBtn text={thumb} label="Copy thumbnail" /> : null}
                       </div>
                     </div>
                   ) : effective ? (
@@ -1042,12 +1265,9 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                       </a>
                     </div>
                   ) : (
-                    <div className="mt-4 text-sm opacity-70">
-                      No audio_url/media_url set yet (this tab hides image-only items).
-                    </div>
+                    <div className="mt-4 text-sm opacity-70">No audio_url/media_url set yet.</div>
                   )}
 
-                  {/* Editor */}
                   <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
                       <label className="block text-[10px] opacity-70">Title</label>
@@ -1057,6 +1277,7 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                         onChange={(e) => setRow(p.id, { title: e.target.value })}
                       />
                     </div>
+
                     <div>
                       <label className="block text-[10px] opacity-70">Slug</label>
                       <input
@@ -1065,14 +1286,27 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                         onChange={(e) => setRow(p.id, { slug: e.target.value })}
                       />
                     </div>
+
                     <div>
                       <label className="block text-[10px] opacity-70">Thumbnail URL (optional)</label>
                       <input
                         className="w-full dark:bg-gray-800 text-sm rounded-xl px-3 py-2 border border-gray-200 dark:border-gray-700"
-                        value={row.thumbnail_url ?? p.thumbnail_url ?? ""}
-                        onChange={(e) => setRow(p.id, { thumbnail_url: e.target.value })}
-                        placeholder="Only used if tied to audio"
+                        value={
+                          postsCols.thumbnail_url
+                            ? row.thumbnail_url ?? p.thumbnail_url ?? quick.thumbnail_url ?? ""
+                            : row.featured_image ?? p.featured_image ?? quick.thumbnail_url ?? ""
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (postsCols.thumbnail_url) setRow(p.id, { thumbnail_url: v });
+                          else if (postsCols.featured_image) setRow(p.id, { featured_image: v });
+                          else setRowQuick(p.id, { thumbnail_url: v }); // metadata-only fallback
+                        }}
+                        placeholder="https://.../thumb.webp"
                       />
+                      <div className="text-[10px] opacity-60 mt-1">
+                        Stored in <code>metadata.thumbnail_url</code> always. Column write is auto-detected.
+                      </div>
                     </div>
 
                     <div className="md:col-span-3">
@@ -1152,6 +1386,13 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                           value={row?.metaQuick?.tags ?? quick.tags}
                           onChange={(e) => setRowQuick(p.id, { tags: e.target.value })}
                         />
+
+                        <input
+                          className="w-full dark:bg-gray-800 text-sm rounded-xl px-3 py-2 border border-gray-200 dark:border-gray-700 md:col-span-3"
+                          placeholder="thumbnail_url (optional) — stored in metadata"
+                          value={row?.metaQuick?.thumbnail_url ?? quick.thumbnail_url}
+                          onChange={(e) => setRowQuick(p.id, { thumbnail_url: e.target.value })}
+                        />
                       </div>
                     </div>
 
@@ -1163,7 +1404,7 @@ export default function MediaTab({ posts: allPosts, refreshAll }) {
                         onChange={(e) => setRow(p.id, { metadataStr: e.target.value })}
                       />
                       <div className="mt-2 text-[10px] opacity-60">
-                        Save merges Quick Metadata + JSON. audio_url is enforced to mp3/wav.
+                        Save merges Quick Metadata + JSON. <b>audio_url is enforced to mp3/wav.</b>
                       </div>
                     </div>
                   </div>

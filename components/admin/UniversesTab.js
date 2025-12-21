@@ -45,14 +45,26 @@ function isLikelyMp4Url(url = "") {
   return String(url || "").toLowerCase().includes(".mp4");
 }
 
-function isImageLike(url = "") {
-  return /\.(png|jpg|jpeg|webp|gif)$/i.test(String(url || ""));
+function isAudioLikeUrl(url = "") {
+  return /\.(mp3|wav|m4a|ogg)$/i.test(String(url || "").split("?")[0]);
+}
+
+function safeMeta(meta) {
+  if (!meta) return {};
+  if (typeof meta === "object") return meta;
+  if (typeof meta === "string") {
+    try {
+      const v = JSON.parse(meta);
+      return v && typeof v === "object" ? v : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }
 
 /** =========================
  * ✅ Storage helpers (CLIENT-SAFE)
- * - Do NOT rely on listBuckets() in browser to work
- * - Force known bucket and route by type to correct folders
  * ========================= */
 const DEFAULT_BUCKET = process.env.NEXT_PUBLIC_STORAGE_BUCKET || "assets";
 
@@ -152,18 +164,25 @@ export default function UniversesTab() {
   const [uWorldMap, setUWorldMap] = useState("");
   const [uStatus, setUStatus] = useState("draft"); // draft|published
 
-  // Product search
+  // Product search (existing)
   const [division, setDivision] = useState("publishing");
   const [query, setQuery] = useState("");
   const [productResults, setProductResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const lastSearchKey = useRef("");
 
+  // ✅ NEW: Media search (posts division=media)
+  const [mediaQuery, setMediaQuery] = useState("");
+  const [mediaTypeFilter, setMediaTypeFilter] = useState("all"); // all|soundtrack|score|trailer|audiobook|chapter_read|scene|playlist|musicvideo
+  const [mediaResults, setMediaResults] = useState([]);
+  const [mediaSearching, setMediaSearching] = useState(false);
+  const lastMediaSearchKey = useRef("");
+
   // Universe asset CRUD
   const [assetEdits, setAssetEdits] = useState({});
   const [savingAssetIds, setSavingAssetIds] = useState({});
 
-  // Quick-add
+  // Quick-add (existing)
   const [qaDivision, setQaDivision] = useState("studios");
   const [qaType, setQaType] = useState("trailer");
   const [qaTitle, setQaTitle] = useState("");
@@ -195,19 +214,21 @@ export default function UniversesTab() {
     []
   );
 
+  const MEDIA_TYPES = useMemo(
+    () => ["all", "soundtrack", "score", "trailer", "audiobook", "chapter_read", "scene", "playlist", "musicvideo"],
+    []
+  );
+
   const canEditUniverse = Boolean(selectedUniverse?.id);
 
   /** =========================
    * ✅ INIT: client-safe bucket selection
-   * - Force DEFAULT_BUCKET immediately so uploads never depend on listBuckets()
    * ========================= */
   useEffect(() => {
-    // ✅ client-safe: just pick the bucket we know exists
     const preferred = DEFAULT_BUCKET;
     setStorageBucket(preferred);
     setBucketReady(true);
 
-    // Optional: try to load buckets for dropdown but don't block uploads if it fails
     (async () => {
       try {
         const { data } = await supabase.storage.listBuckets();
@@ -381,7 +402,10 @@ export default function UniversesTab() {
           const { data, error } = await supabase.from("universes").insert([payload]).select("*").single();
           if (error) throw error;
           setSelectedUniverse(data);
-          setNotice({ type: "ok", msg: payload.status === "published" ? "Universe created + published." : "Universe created." });
+          setNotice({
+            type: "ok",
+            msg: payload.status === "published" ? "Universe created + published." : "Universe created.",
+          });
         }
 
         await loadUniverses();
@@ -430,6 +454,9 @@ export default function UniversesTab() {
       setProductResults([]);
       setAssetEdits({});
       resetQuickAdd();
+      setMediaResults([]);
+      setMediaQuery("");
+      setMediaTypeFilter("all");
       setNotice({ type: "ok", msg: "Universe deleted." });
       await loadUniverses();
     } catch (e) {
@@ -456,7 +483,7 @@ export default function UniversesTab() {
   );
 
   /** =========================
-   * ✅ Universe Cover Upload (image → images/universes/{slug}/cover)
+   * ✅ Universe Cover Upload
    * ========================= */
   const uploadCoverFile = useCallback(
     async (file) => {
@@ -471,7 +498,7 @@ export default function UniversesTab() {
 
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
 
-        const { publicUrl, path } = await uploadToStorage({
+        const { publicUrl } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder: `images/universes/${slug}/cover`,
@@ -480,13 +507,6 @@ export default function UniversesTab() {
 
         setUCover(publicUrl);
         if (selectedUniverse?.id) await persistUniverseField("cover_image_url", publicUrl);
-
-        // (Optional) If your universes table has a metadata jsonb column, you can store the storage path:
-        // await supabase
-        //   .from("universes")
-        //   .update({ metadata: { ...(selectedUniverse?.metadata || {}), storage: { ...(selectedUniverse?.metadata?.storage || {}), cover: { bucket: storageBucket, path } } } })
-        //   .eq("id", selectedUniverse.id);
-
         setNotice({ type: "ok", msg: "Cover uploaded and saved." });
       } catch (e) {
         console.error(e);
@@ -499,7 +519,7 @@ export default function UniversesTab() {
   );
 
   /** =========================
-   * ✅ Hero Video Upload (mp4 → videos/universes/{slug}/hero)
+   * ✅ Hero Video Upload
    * ========================= */
   const uploadHeroVideoFile = useCallback(
     async (file) => {
@@ -537,7 +557,7 @@ export default function UniversesTab() {
   );
 
   /** =========================
-   * ✅ Featured World Map Upload (image → images/universes/{slug}/world-map/featured)
+   * ✅ Featured World Map Upload
    * ========================= */
   const uploadFeaturedWorldMapFile = useCallback(
     async (file) => {
@@ -657,7 +677,7 @@ export default function UniversesTab() {
   }, [selectedUniverse?.id, pId, loadStudioPages, resetPageEditor]);
 
   /** =========================
-   * Products attach (kept intact)
+   * Products attach (existing)
    * ========================= */
   const searchProducts = useCallback(async () => {
     setSearching(true);
@@ -672,7 +692,7 @@ export default function UniversesTab() {
         .select("id,name,slug,division,price,image_url,tags,description,thumbnail_url,updated_at")
         .eq("division", division)
         .order("updated_at", { ascending: false })
-        .limit(10);
+        .limit(12);
 
       if (qtxt) q = q.or(`name.ilike.%${qtxt}%,slug.ilike.%${qtxt}%`);
 
@@ -759,7 +779,178 @@ export default function UniversesTab() {
   );
 
   /** =========================
-   * Asset edit helpers
+   * ✅ NEW: Media attach (from posts table where division='media')
+   * Goal:
+   * - Anything on media.js can be attached to a Universe (universe_assets)
+   * - Studio page can render using metadata.audio_url/media_url
+   *
+   * IMPORTANT:
+   * - We do NOT assume extra columns like source_post_id exist.
+   * - We store identifiers in metadata so this works immediately.
+   * ========================= */
+  const searchMediaPosts = useCallback(async () => {
+    if (!selectedUniverse?.id) {
+      setMediaResults([]);
+      return;
+    }
+    setMediaSearching(true);
+    setNotice(null);
+
+    try {
+      const qtxt = mediaQuery.trim();
+      const searchKey = `${mediaTypeFilter}::${qtxt}`;
+      lastMediaSearchKey.current = searchKey;
+
+      // ✅ FIX: removed "thumbnail_url" from select because posts.thumbnail_url does not exist
+      let q = supabase
+        .from("posts")
+        .select("id,title,slug,excerpt,division,featured_image,metadata,created_at,updated_at")
+        .eq("division", "media")
+        .order("updated_at", { ascending: false })
+        .limit(20);
+
+      if (qtxt) {
+        q = q.or(`title.ilike.%${qtxt}%,slug.ilike.%${qtxt}%,excerpt.ilike.%${qtxt}%`);
+      }
+
+      const { data, error } = await q;
+      if (lastMediaSearchKey.current !== searchKey) return;
+      if (error) throw error;
+
+      let list = (data || []).map((p) => {
+        const m = safeMeta(p.metadata);
+        const media_type = String(m.media_type || "").trim() || "soundtrack";
+
+        const audio_url = String(m.audio_url || "").trim();
+        const media_url = String(m.media_url || "").trim();
+
+        const bestMediaUrl = audio_url || media_url || "";
+
+        // ✅ FIX: never reference p.thumbnail_url; derive thumbnail from metadata + featured_image only
+        const thumb =
+          String(m.thumbnail_url || m.thumb_url || m.cover_url || "").trim() ||
+          String(p.featured_image || "").trim() ||
+          "";
+
+        return {
+          ...p,
+          _meta: m,
+          _media_type: media_type,
+          _audio_url: audio_url,
+          _media_url: media_url,
+          _best_url: bestMediaUrl,
+          _thumb: thumb,
+        };
+      });
+
+      if (mediaTypeFilter !== "all") {
+        list = list.filter((p) => String(p._media_type || "").toLowerCase() === String(mediaTypeFilter).toLowerCase());
+      }
+
+      setMediaResults(list);
+    } catch (e) {
+      console.error(e);
+      setMediaResults([]);
+      setNotice({ type: "error", msg: e?.message || "Media search failed" });
+    } finally {
+      setMediaSearching(false);
+    }
+  }, [selectedUniverse?.id, mediaQuery, mediaTypeFilter]);
+
+  useEffect(() => {
+    if (!selectedUniverse?.id) return;
+    // auto-load “recent media” once universe is selected
+    if (mediaQuery.trim() !== "") return;
+    searchMediaPosts();
+  }, [selectedUniverse?.id, mediaTypeFilter, mediaQuery, searchMediaPosts]);
+
+  const addMediaPostToUniverse = useCallback(
+    async (post) => {
+      if (!selectedUniverse?.id) {
+        setNotice({ type: "error", msg: "Select or create a universe first." });
+        return;
+      }
+
+      // de-dupe by metadata.post_id OR by external_url === /media/slug
+      const already = assets.some((a) => {
+        if (a.source_type === "post") {
+          const md = a.metadata || {};
+          if (md?.post_id && md.post_id === post.id) return true;
+          if (md?.post_slug && md.post_slug === post.slug) return true;
+        }
+        if (a.external_url && post?.slug && String(a.external_url) === `/media/${post.slug}`) return true;
+        return false;
+      });
+
+      if (already) {
+        setNotice({ type: "error", msg: "That media item is already attached to this universe." });
+        return;
+      }
+
+      try {
+        const maxSort = assets.length ? Math.max(...assets.map((x) => clampInt(x.sort_order, 0))) : 0;
+        const m = safeMeta(post._meta || post.metadata);
+
+        // prefer a playable url for Studio preview (audio first)
+        const audio_url = String(m.audio_url || post._audio_url || "").trim();
+        const media_url = String(m.media_url || post._media_url || "").trim();
+        const playable = audio_url || (isAudioLikeUrl(media_url) ? media_url : "");
+
+        // Always set internal detail page too
+        const detailUrl = post?.slug ? `/media/${post.slug}` : "";
+
+        // Use playable url if present; otherwise link to the detail page so Studio can still open it
+        const external_url = playable || media_url || detailUrl;
+
+        // asset_type should map to your studio renderer categories
+        // (you can adjust mappings here without touching Studio code)
+        const asset_type = String(m.media_type || post._media_type || "soundtrack").trim() || "soundtrack";
+
+        const insertRow = {
+          universe_id: selectedUniverse.id,
+          division: "media",
+          asset_type, // soundtrack | score | trailer | audiobook | chapter_read | scene | playlist | musicvideo
+          title: post.title || "Media Item",
+          description: post.excerpt || "Linked from Media.",
+          external_url: external_url || detailUrl || "",
+          thumbnail_url: (m.thumbnail_url || post._thumb || post.featured_image || null) ?? null,
+          is_public: true,
+          status: "published",
+          sort_order: maxSort + 10,
+          source_type: "post",
+          // ⚠️ do NOT include source_post_id unless you're 100% sure the column exists.
+          metadata: {
+            kind: "media",
+            source: "posts",
+            post_id: post.id,
+            post_slug: post.slug,
+            media_type: asset_type,
+            // give Studio a direct audio field to play
+            audio_url: audio_url || null,
+            media_url: media_url || null,
+            detail_url: detailUrl || null,
+            duration: m.duration || null,
+            mood: m.mood || null,
+            scene: m.scene || null,
+          },
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error } = await supabase.from("universe_assets").insert([insertRow]);
+        if (error) throw error;
+
+        setNotice({ type: "ok", msg: "Media added to universe." });
+        await loadUniverseAssets(selectedUniverse.id);
+      } catch (e) {
+        console.error(e);
+        setNotice({ type: "error", msg: e?.message || "Failed to add media" });
+      }
+    },
+    [selectedUniverse?.id, assets, loadUniverseAssets]
+  );
+
+  /** =========================
+   * Asset edit helpers (existing)
    * ========================= */
   const setAssetField = useCallback((assetId, patch) => {
     setAssetEdits((prev) => ({ ...prev, [assetId]: { ...(prev[assetId] || {}), ...patch } }));
@@ -886,8 +1077,6 @@ export default function UniversesTab() {
 
   /** =========================
    * ✅ Upload thumb for existing asset and persist immediately
-   * - image → images/...
-   * - mp4   → videos/...
    * ========================= */
   const uploadAssetThumbFile = useCallback(
     async (asset, file) => {
@@ -946,8 +1135,6 @@ export default function UniversesTab() {
 
   /** =========================
    * Quick Add thumb upload (image OR mp4)
-   * - image → images/...
-   * - mp4   → videos/...
    * ========================= */
   const uploadQuickAddThumbFile = useCallback(
     async (file) => {
@@ -995,9 +1182,7 @@ export default function UniversesTab() {
   );
 
   /** =========================
-   * ✅ World Map Gallery (uploads create universe_assets rows)
-   * - Batch images only
-   * - images/universes/{slug}/world-map/gallery
+   * ✅ World Map Gallery + Regions (kept intact)
    * ========================= */
   const uploadWorldMapGallery = useCallback(
     async (files) => {
@@ -1073,46 +1258,38 @@ export default function UniversesTab() {
     [storageBucket, selectedUniverse?.id, selectedUniverse?.slug, assets, uSlug, uTitle, loadUniverseAssets]
   );
 
-  /** =========================
-   * ✅ World Map Regions CRUD (world_map_regions)
-   * ========================= */
   const [selectedWorldMapAssetId, setSelectedWorldMapAssetId] = useState(null);
   const [regions, setRegions] = useState([]);
   const [loadingRegions, setLoadingRegions] = useState(false);
   const [savingRegionId, setSavingRegionId] = useState(null);
 
-  const loadRegions = useCallback(
-    async (universeId, worldMapAssetId) => {
-      if (!universeId) return;
-      setLoadingRegions(true);
-      setNotice(null);
+  const loadRegions = useCallback(async (universeId, worldMapAssetId) => {
+    if (!universeId) return;
+    setLoadingRegions(true);
+    setNotice(null);
 
-      let q = supabase
-        .from("world_map_regions")
-        .select("*")
-        .eq("universe_id", universeId)
-        .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: true });
+    let q = supabase
+      .from("world_map_regions")
+      .select("*")
+      .eq("universe_id", universeId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
 
-      // if map selected, filter to it
-      if (worldMapAssetId) q = q.eq("world_map_asset_id", worldMapAssetId);
+    if (worldMapAssetId) q = q.eq("world_map_asset_id", worldMapAssetId);
 
-      const { data, error } = await q;
-      if (error) {
-        console.error(error);
-        setRegions([]);
-        setNotice({ type: "error", msg: error.message || "Failed to load regions" });
-      } else {
-        setRegions(data || []);
-      }
-      setLoadingRegions(false);
-    },
-    []
-  );
+    const { data, error } = await q;
+    if (error) {
+      console.error(error);
+      setRegions([]);
+      setNotice({ type: "error", msg: error.message || "Failed to load regions" });
+    } else {
+      setRegions(data || []);
+    }
+    setLoadingRegions(false);
+  }, []);
 
   useEffect(() => {
     if (!selectedUniverse?.id) return;
-    // default: load all regions for universe
     loadRegions(selectedUniverse.id, selectedWorldMapAssetId);
   }, [selectedUniverse?.id, selectedWorldMapAssetId, loadRegions]);
 
@@ -1198,7 +1375,7 @@ export default function UniversesTab() {
   );
 
   /** =========================
-   * Quick add custom asset (kept)
+   * Quick add custom asset (existing)
    * ========================= */
   const addCustomAsset = useCallback(async () => {
     if (!selectedUniverse?.id) {
@@ -1250,7 +1427,22 @@ export default function UniversesTab() {
       console.error(e);
       setNotice({ type: "error", msg: e?.message || "Failed to add universe item" });
     }
-  }, [selectedUniverse?.id, qaDivision, qaType, qaTitle, qaDesc, qaUrl, qaThumb, qaPublic, qaPrice, qaStatus, qaMetaStr, assets, resetQuickAdd, loadUniverseAssets]);
+  }, [
+    selectedUniverse?.id,
+    qaDivision,
+    qaType,
+    qaTitle,
+    qaDesc,
+    qaUrl,
+    qaThumb,
+    qaPublic,
+    qaPrice,
+    qaStatus,
+    qaMetaStr,
+    assets,
+    resetQuickAdd,
+    loadUniverseAssets,
+  ]);
 
   const primeQuickAddForCharacter = useCallback(() => {
     setQaDivision("studios");
@@ -1264,7 +1456,7 @@ export default function UniversesTab() {
   }, [qaMetaStr, qaTitle, qaDesc]);
 
   /** =========================
-   * ✅ Local (no-RPC) backfill tool: thumbnails from external_url
+   * ✅ Local backfill tool
    * ========================= */
   const backfillThumbnailsLocal = useCallback(async () => {
     if (!selectedUniverse?.id) return;
@@ -1390,6 +1582,9 @@ export default function UniversesTab() {
             setSelectedWorldMapAssetId(null);
             setRegions([]);
             resetRegionForm();
+            setMediaResults([]);
+            setMediaQuery("");
+            setMediaTypeFilter("all");
           }}
         >
           + New Universe
@@ -1399,7 +1594,9 @@ export default function UniversesTab() {
       {notice?.msg && (
         <div
           className={`rounded-xl border p-3 text-sm ${
-            notice.type === "error" ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"
+            notice.type === "error"
+              ? "border-red-200 bg-red-50 text-red-800"
+              : "border-emerald-200 bg-emerald-50 text-emerald-800"
           }`}
         >
           {notice.msg}
@@ -1430,7 +1627,9 @@ export default function UniversesTab() {
                       <div className="font-semibold">{u.title}</div>
                       <span
                         className={`px-2 py-0.5 rounded-full border text-xs ${
-                          isPub ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-amber-300 bg-amber-50 text-amber-900"
+                          isPub
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                            : "border-amber-300 bg-amber-50 text-amber-900"
                         }`}
                       >
                         {isPub ? "published" : "draft"}
@@ -1482,8 +1681,8 @@ export default function UniversesTab() {
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
               <div className="font-semibold">Uploads disabled</div>
               <div className="mt-1">
-                Supabase Storage bucket not found. Create one in Supabase → Storage (recommended name: <code>assets</code>), then pick it
-                in the dropdown above.
+                Supabase Storage bucket not found. Create one in Supabase → Storage (recommended name: <code>assets</code>
+                ), then pick it in the dropdown above.
               </div>
             </div>
           )}
@@ -1538,12 +1737,7 @@ export default function UniversesTab() {
               Hero Video URL
               <input className="mt-1 w-full border rounded-xl p-2" value={uHeroVideo} onChange={(e) => setUHeroVideo(e.target.value)} />
               <div className="mt-2 flex items-center gap-3 flex-wrap">
-                <input
-                  type="file"
-                  accept="video/mp4"
-                  disabled={uploading || !storageBucket}
-                  onChange={(e) => uploadHeroVideoFile(e.target.files?.[0])}
-                />
+                <input type="file" accept="video/mp4" disabled={uploading || !storageBucket} onChange={(e) => uploadHeroVideoFile(e.target.files?.[0])} />
                 {uHeroVideo && isLikelyMp4Url(uHeroVideo) ? (
                   <video src={uHeroVideo} className="h-16 w-24 rounded-xl object-cover border" muted playsInline loop autoPlay />
                 ) : null}
@@ -1626,13 +1820,7 @@ export default function UniversesTab() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                disabled={uploading || !storageBucket}
-                onChange={(e) => uploadWorldMapGallery(e.target.files)}
-              />
+              <input type="file" accept="image/*" multiple disabled={uploading || !storageBucket} onChange={(e) => uploadWorldMapGallery(e.target.files)} />
             </div>
           </div>
 
@@ -1695,10 +1883,7 @@ export default function UniversesTab() {
                             Set as Featured
                           </button>
 
-                          <button
-                            className="px-3 py-1.5 rounded-xl border border-red-300 bg-red-50 text-red-900 text-sm"
-                            onClick={() => removeAsset(m.id)}
-                          >
+                          <button className="px-3 py-1.5 rounded-xl border border-red-300 bg-red-50 text-red-900 text-sm" onClick={() => removeAsset(m.id)}>
                             Delete
                           </button>
                         </div>
@@ -1717,7 +1902,7 @@ export default function UniversesTab() {
                   <div className="text-[12px] opacity-70 mt-1">
                     {selectedWorldMapAssetId ? (
                       <>
-                        Filtering to selected map: <code>{selectedWorldMapAssetId.slice(0, 8)}…</code>
+                        Filtering to selected map: <code>{String(selectedWorldMapAssetId).slice(0, 8)}…</code>
                       </>
                     ) : (
                       <>Showing all regions for the universe (select a map to filter).</>
@@ -1777,22 +1962,14 @@ export default function UniversesTab() {
                               <button
                                 className="px-3 py-1 rounded-xl border text-sm disabled:opacity-50"
                                 disabled={isSaving}
-                                onClick={() =>
-                                  updateRegion(r.id, {
-                                    sort_order: clampInt(r.sort_order, 0) - 10,
-                                  })
-                                }
+                                onClick={() => updateRegion(r.id, { sort_order: clampInt(r.sort_order, 0) - 10 })}
                               >
                                 ↑
                               </button>
                               <button
                                 className="px-3 py-1 rounded-xl border text-sm disabled:opacity-50"
                                 disabled={isSaving}
-                                onClick={() =>
-                                  updateRegion(r.id, {
-                                    sort_order: clampInt(r.sort_order, 0) + 10,
-                                  })
-                                }
+                                onClick={() => updateRegion(r.id, { sort_order: clampInt(r.sort_order, 0) + 10 })}
                               >
                                 ↓
                               </button>
@@ -1851,7 +2028,7 @@ export default function UniversesTab() {
         </div>
       )}
 
-      {/* Studio Pages (unchanged structure) */}
+      {/* Studio Pages (kept intact) */}
       {selectedUniverse?.id && (
         <div className="rounded-2xl border border-gray-200 p-4">
           <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -1880,13 +2057,17 @@ export default function UniversesTab() {
                     <button
                       key={pg.id}
                       onClick={() => selectPage(pg)}
-                      className={`w-full text-left p-3 rounded-xl border transition ${pId === pg.id ? "border-black" : "border-gray-200 hover:border-gray-300"}`}
+                      className={`w-full text-left p-3 rounded-xl border transition ${
+                        pId === pg.id ? "border-black" : "border-gray-200 hover:border-gray-300"
+                      }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-semibold">{pg.title}</div>
                         <span
                           className={`px-2 py-0.5 rounded-full border text-xs ${
-                            pg.status === "published" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-amber-300 bg-amber-50 text-amber-900"
+                            pg.status === "published"
+                              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                              : "border-amber-300 bg-amber-50 text-amber-900"
                           }`}
                         >
                           {pg.status}
@@ -1947,7 +2128,11 @@ export default function UniversesTab() {
 
                 <label className="text-sm md:col-span-3">
                   Content (Markdown or plain text — paste)
-                  <textarea className="mt-1 w-full border rounded-xl p-3 min-h-[260px] font-mono text-xs" value={pContent} onChange={(e) => setPContent(e.target.value)} />
+                  <textarea
+                    className="mt-1 w-full border rounded-xl p-3 min-h-[260px] font-mono text-xs"
+                    value={pContent}
+                    onChange={(e) => setPContent(e.target.value)}
+                  />
                 </label>
               </div>
 
@@ -1968,6 +2153,124 @@ export default function UniversesTab() {
           </div>
         </div>
       )}
+
+      {/* ✅ NEW: Attach Media Tracks / Audio / Trailers from media.js (posts division=media) */}
+      <div className="rounded-2xl border border-gray-200 p-4">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <div className="font-semibold">Attach Media (Songs / Audio / Trailers)</div>
+            <div className="text-sm opacity-70">
+              Pull from <code>posts</code> where <code>division=media</code>. Adds to <code>universe_assets</code> so it renders on <code>/studios/[slug]</code>.
+            </div>
+          </div>
+
+          <div className="flex gap-2 flex-wrap items-center">
+            <select className="border rounded-xl p-2" value={mediaTypeFilter} onChange={(e) => setMediaTypeFilter(e.target.value)}>
+              {MEDIA_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+
+            <input
+              className="border rounded-xl p-2"
+              value={mediaQuery}
+              onChange={(e) => setMediaQuery(e.target.value)}
+              placeholder="Search media title or slug…"
+            />
+
+            <button className="px-4 py-2 rounded-xl border border-gray-300" onClick={searchMediaPosts} disabled={mediaSearching || !selectedUniverse?.id}>
+              {mediaSearching ? "Searching…" : "Search Media"}
+            </button>
+          </div>
+        </div>
+
+        {!selectedUniverse?.id && (
+          <div className="mt-4 text-sm rounded-xl border border-amber-200 bg-amber-50 p-3">
+            Create or select a universe first. Then you can attach media to it.
+          </div>
+        )}
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {mediaResults.map((p) => {
+            const already = assets.some((a) => {
+              if (a.source_type === "post") {
+                const md = a.metadata || {};
+                if (md?.post_id && md.post_id === p.id) return true;
+                if (md?.post_slug && md.post_slug === p.slug) return true;
+              }
+              if (a.external_url && p?.slug && String(a.external_url) === `/media/${p.slug}`) return true;
+              return false;
+            });
+
+            const playable = p._audio_url || (isAudioLikeUrl(p._media_url) ? p._media_url : "");
+            const detailUrl = p.slug ? `/media/${p.slug}` : "";
+            const thumb = p._thumb;
+
+            return (
+              <div key={p.id} className="rounded-2xl border border-gray-200 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[11px] opacity-70 uppercase tracking-[0.22em]">
+                      media • {String(p._media_type || "soundtrack")}
+                    </div>
+                    <div className="font-semibold truncate">{p.title}</div>
+                    <div className="text-xs opacity-70 truncate">{p.slug}</div>
+                  </div>
+                  {already ? (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800">
+                      attached
+                    </span>
+                  ) : null}
+                </div>
+
+                {thumb ? <img src={thumb} alt="" className="mt-3 h-28 w-full object-cover rounded-xl" /> : null}
+
+                <div className="mt-3 space-y-2">
+                  {playable ? (
+                    <audio controls className="w-full">
+                      <source src={playable} />
+                    </audio>
+                  ) : (
+                    <div className="text-xs opacity-70">
+                      No direct audio URL found in metadata. (That’s okay — Studio can still link to the Media page.)
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 flex-wrap">
+                    {detailUrl ? (
+                      <a className="text-sm underline" href={detailUrl} target="_blank" rel="noreferrer">
+                        Open Media Page →
+                      </a>
+                    ) : null}
+                    {p._best_url ? (
+                      <a className="text-sm underline" href={p._best_url} target="_blank" rel="noreferrer">
+                        Open Source URL →
+                      </a>
+                    ) : null}
+                  </div>
+
+                  <button
+                    className="w-full px-3 py-2 rounded-xl bg-black text-white disabled:opacity-50"
+                    onClick={() => addMediaPostToUniverse(p)}
+                    disabled={!selectedUniverse?.id || already}
+                  >
+                    {already ? "Already Added" : "Add Media to Universe"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {selectedUniverse?.id && mediaResults.length === 0 && (
+          <div className="mt-4 text-sm opacity-70">
+            No media results. If you know you have items, confirm your <code>posts</code> table has <code>division='media'</code> and fields
+            <code> title</code>/<code>slug</code>. Metadata should include <code>audio_url</code> and/or <code>media_url</code> for best Studio playback.
+          </div>
+        )}
+      </div>
 
       {/* Quick add custom item (manual link) */}
       <div className="rounded-2xl border border-gray-200 p-4">
@@ -2003,6 +2306,12 @@ export default function UniversesTab() {
             <select className="mt-1 w-full border rounded-xl p-2" value={qaType} onChange={(e) => setQaType(e.target.value)}>
               <option value="trailer">trailer</option>
               <option value="soundtrack">soundtrack</option>
+              <option value="score">score</option>
+              <option value="audiobook">audiobook</option>
+              <option value="chapter_read">chapter_read</option>
+              <option value="scene">scene</option>
+              <option value="playlist">playlist</option>
+              <option value="musicvideo">musicvideo</option>
               <option value="pitch_deck">pitch_deck</option>
               <option value="option_deck">option_deck</option>
               <option value="script">script</option>
@@ -2039,8 +2348,9 @@ export default function UniversesTab() {
           </label>
 
           <label className="text-sm md:col-span-2">
-            External URL (YouTube/Spotify/PDF/etc)
+            External URL (YouTube/Spotify/MP3/PDF/etc)
             <input className="mt-1 w-full border rounded-xl p-2" value={qaUrl} onChange={(e) => setQaUrl(e.target.value)} placeholder="https://..." />
+            <div className="text-[11px] opacity-60 mt-1">Tip: for songs, use a direct mp3/wav URL for instant audio playback on Studio pages.</div>
           </label>
 
           <label className="text-sm">
@@ -2084,7 +2394,7 @@ export default function UniversesTab() {
         </div>
       </div>
 
-      {/* Curate products into universe */}
+      {/* Curate products into universe (existing) */}
       <div className="rounded-2xl border border-gray-200 p-4">
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
@@ -2140,7 +2450,9 @@ export default function UniversesTab() {
         <div className="rounded-2xl border border-gray-200 p-4">
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div className="font-semibold">Universe Items ({assets.length})</div>
-            <div className="text-sm opacity-70">Upload thumbnails per item. Upload now persists immediately.</div>
+            <div className="text-sm opacity-70">
+              Tip: for songs, ensure metadata has <code>audio_url</code> (mp3/wav) so Studio can play instantly.
+            </div>
           </div>
 
           {assets.length === 0 ? (
@@ -2163,7 +2475,10 @@ export default function UniversesTab() {
 
                 const metaStr = getAssetMetaStr(a);
                 const metaObj = safeJsonParse(metaStr, a.metadata || {});
-                const thumbIsVideo = isLikelyMp4Url(thumb) || String(metaObj?.thumb_kind || "").toLowerCase() === "video";
+                const thumbIsVideo =
+                  isLikelyMp4Url(thumb) || String(metaObj?.thumb_kind || "").toLowerCase() === "video";
+
+                const hasAudio = isAudioLikeUrl(exUrl) || isAudioLikeUrl(metaObj?.audio_url || "");
 
                 return (
                   <div key={a.id} className="rounded-2xl border border-gray-200 p-4">
@@ -2183,6 +2498,7 @@ export default function UniversesTab() {
                       <div className="flex-1 min-w-0">
                         <div className="text-[11px] opacity-70 uppercase tracking-[0.22em]">
                           {String(a.division || "").toUpperCase()} • {String(a.asset_type || "").toUpperCase()}
+                          {hasAudio ? " • AUDIO" : ""}
                         </div>
                         <div className="font-semibold truncate">{a.title}</div>
                         {!isPublic && (
@@ -2193,10 +2509,18 @@ export default function UniversesTab() {
                       </div>
 
                       <div className="flex gap-2">
-                        <button className="px-3 py-1 rounded-xl border text-sm disabled:opacity-50" disabled={idx === 0 || isSaving} onClick={() => moveAsset(a.id, -1)}>
+                        <button
+                          className="px-3 py-1 rounded-xl border text-sm disabled:opacity-50"
+                          disabled={idx === 0 || isSaving}
+                          onClick={() => moveAsset(a.id, -1)}
+                        >
                           ↑
                         </button>
-                        <button className="px-3 py-1 rounded-xl border text-sm disabled:opacity-50" disabled={idx === assets.length - 1 || isSaving} onClick={() => moveAsset(a.id, +1)}>
+                        <button
+                          className="px-3 py-1 rounded-xl border text-sm disabled:opacity-50"
+                          disabled={idx === assets.length - 1 || isSaving}
+                          onClick={() => moveAsset(a.id, +1)}
+                        >
                           ↓
                         </button>
                       </div>
@@ -2210,7 +2534,11 @@ export default function UniversesTab() {
 
                       <label className="text-sm">
                         Sort Order
-                        <input className="mt-1 w-full border rounded-xl p-2" value={String(sortOrderVal ?? "")} onChange={(e) => setAssetField(a.id, { sort_order: e.target.value })} />
+                        <input
+                          className="mt-1 w-full border rounded-xl p-2"
+                          value={String(sortOrderVal ?? "")}
+                          onChange={(e) => setAssetField(a.id, { sort_order: e.target.value })}
+                        />
                       </label>
 
                       <label className="text-sm">
@@ -2221,6 +2549,9 @@ export default function UniversesTab() {
                       <label className="text-sm">
                         Asset Type
                         <input className="mt-1 w-full border rounded-xl p-2" value={typeVal} onChange={(e) => setAssetField(a.id, { asset_type: e.target.value })} />
+                        <div className="text-[11px] opacity-60 mt-1">
+                          For songs: <code>soundtrack</code> or <code>score</code>. For reads: <code>chapter_read</code>. For video: <code>trailer</code>.
+                        </div>
                       </label>
 
                       <label className="text-sm md:col-span-2">
@@ -2231,6 +2562,9 @@ export default function UniversesTab() {
                       <label className="text-sm md:col-span-2">
                         External URL
                         <input className="mt-1 w-full border rounded-xl p-2" value={exUrl} onChange={(e) => setAssetField(a.id, { external_url: e.target.value })} />
+                        <div className="text-[11px] opacity-60 mt-1">
+                          For audio playback on Studio pages, make this a direct <code>.mp3</code>/<code>.wav</code> or store <code>metadata.audio_url</code>.
+                        </div>
                       </label>
 
                       <label className="text-sm md:col-span-2">
@@ -2290,6 +2624,9 @@ export default function UniversesTab() {
                       <label className="text-sm md:col-span-2">
                         Metadata JSON
                         <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[70px]" value={metaStr} onChange={(e) => setAssetField(a.id, { metadataStr: e.target.value })} />
+                        <div className="text-[11px] opacity-60 mt-1">
+                          For Studio music playback, include: <code>{`{"audio_url":"...mp3","media_type":"soundtrack"}`}</code>
+                        </div>
                       </label>
                     </div>
 

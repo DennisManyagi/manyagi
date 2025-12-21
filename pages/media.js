@@ -12,6 +12,20 @@ import SubscriptionForm from "@/components/SubscriptionForm";
 // -------------------------------
 const asStr = (v) => (v === null || v === undefined ? "" : String(v));
 
+function safeMeta(meta) {
+  if (!meta) return {};
+  if (typeof meta === "object") return meta;
+  if (typeof meta === "string") {
+    try {
+      const parsed = JSON.parse(meta);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 function groupBy(arr, key) {
   return (arr || []).reduce((acc, item) => {
     const k = asStr(item?.[key] || "other").toLowerCase();
@@ -21,14 +35,9 @@ function groupBy(arr, key) {
   }, {});
 }
 
-function pickCardImage(post) {
-  return (
-    post.thumbnail_url ||
-    post.featured_image ||
-    post?.metadata?.cover_url ||
-    post?.metadata?.image_url ||
-    "/placeholder.png"
-  );
+function isDirectAudio(url) {
+  const u = (url || "").toLowerCase().split("?")[0];
+  return u.endsWith(".mp3") || u.endsWith(".wav") || u.endsWith(".m4a") || u.endsWith(".ogg");
 }
 
 function inferPlatform(url) {
@@ -41,19 +50,23 @@ function inferPlatform(url) {
   if (u.includes("tiktok.com")) return "TikTok";
   if (u.includes("instagram.com")) return "Instagram";
   if (u.includes("apple.com") || u.includes("music.apple.com")) return "Apple Music";
+  if (u.includes("suno")) return "Suno";
   return "";
-}
-
-function isDirectAudio(url) {
-  const u = (url || "").toLowerCase();
-  return u.endsWith(".mp3") || u.endsWith(".wav") || u.endsWith(".m4a") || u.endsWith(".ogg");
 }
 
 function normalizeType(t) {
   const v = (t || "").toLowerCase().trim();
-  // Map older types to your new “IP media” language
+
+  // legacy mappings
   if (v === "music" || v === "track") return "soundtrack";
   if (v === "chapter preview" || v === "chapter") return "chapter_read";
+
+  // your MediaTab types
+  if (v === "opening_theme") return "soundtrack";
+  if (v === "ending_theme") return "soundtrack";
+  if (v === "character_theme") return "soundtrack";
+  if (v === "battle_theme") return "score";
+
   return v || "other";
 }
 
@@ -70,6 +83,8 @@ function prettyType(t) {
     musicvideo: "Music Videos",
     reel: "Reels",
     podcast: "Podcasts",
+    interview: "Interviews",
+    event: "Events",
     other: "Media",
   };
   return map[v] || "Media";
@@ -89,6 +104,50 @@ function clamp(s, n = 140) {
   return str.slice(0, n - 1) + "…";
 }
 
+function pickCardImage(post, meta) {
+  return (
+    meta?.thumbnail_url ||
+    post.thumbnail_url ||
+    post.featured_image ||
+    meta?.cover_url ||
+    meta?.image_url ||
+    "/placeholder.png"
+  );
+}
+
+function bestUrl(meta, post) {
+  const audio = asStr(meta?.audio_url).trim();
+  const media = asStr(meta?.media_url).trim();
+
+  const audio2 = asStr(post?.audio_url).trim();
+  const media2 = asStr(post?.media_url).trim();
+
+  return {
+    audio_url: audio || audio2 || "",
+    media_url: media || media2 || "",
+  };
+}
+
+function pickIp(meta) {
+  return (
+    asStr(meta?.book).trim() ||
+    asStr(meta?.series).trim() ||
+    asStr(meta?.universe).trim() ||
+    asStr(meta?.ip).trim() ||
+    asStr(meta?.franchise).trim() ||
+    ""
+  );
+}
+
+function normalizeApiList(json) {
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.posts)) return json.posts;
+  if (json && Array.isArray(json.data)) return json.data;
+  if (json && Array.isArray(json.rows)) return json.rows;
+  if (json && Array.isArray(json.items)) return json.items;
+  return [];
+}
+
 // -------------------------------
 // embeds
 // -------------------------------
@@ -96,7 +155,6 @@ function MediaEmbed({ mediaUrl, audioUrl }) {
   const url = (audioUrl || mediaUrl || "").trim();
   if (!url) return null;
 
-  // Direct audio file -> native player
   if (isDirectAudio(url)) {
     return (
       <div className="w-full rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/60 p-3">
@@ -165,7 +223,6 @@ function MediaEmbed({ mediaUrl, audioUrl }) {
     );
   }
 
-  // fallback
   return (
     <a
       href={url}
@@ -197,9 +254,7 @@ function Rail({ id, title, lead, items }) {
               <img src={item.card_img} alt="" className="absolute inset-0 w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-tr from-black/55 to-transparent" />
               <div className="absolute bottom-3 left-4 right-4">
-                <div className="text-[11px] tracking-[0.28em] uppercase text-white/80">
-                  {prettyType(item.media_type)}
-                </div>
+                <div className="text-[11px] tracking-[0.28em] uppercase text-white/80">{prettyType(item.media_type)}</div>
                 <div className="text-lg font-bold text-white leading-snug line-clamp-2">{item.title}</div>
               </div>
             </div>
@@ -244,7 +299,6 @@ function Rail({ id, title, lead, items }) {
                 <MediaEmbed mediaUrl={item.media_url} audioUrl={item.audio_url} />
               </div>
 
-              {/* monetization CTAs */}
               <div className="mt-4 flex gap-2 flex-wrap">
                 <Link
                   href={`/media/${item.slug}`}
@@ -300,8 +354,6 @@ function Rail({ id, title, lead, items }) {
 export default function MediaPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // IP filter like publishing
   const [activeIP, setActiveIP] = useState("ALL");
 
   useEffect(() => {
@@ -309,40 +361,43 @@ export default function MediaPage() {
       try {
         const res = await fetch("/api/posts?division=media");
         const json = await res.json();
+        const raw = normalizeApiList(json);
 
-        const list = Array.isArray(json)
-          ? json.map((p) => {
-              const m = p.metadata || {};
-              const media_type = normalizeType(m.media_type || "");
-              const media_url = m.media_url || "";
-              const audio_url = m.audio_url || "";
-              const duration = m.duration || "";
-              const platform = m.platform || inferPlatform(media_url || audio_url);
+        const list = (raw || [])
+          .map((p) => {
+            const m = safeMeta(p.metadata);
 
-              // IP: prefer metadata.book -> metadata.series -> metadata.universe
-              const ip = m.book || m.series || m.universe || "";
+            const media_type = normalizeType(m.media_type || "");
+            const urls = bestUrl(m, p);
+            const audio_url = urls.audio_url;
+            const media_url = urls.media_url;
 
-              return {
-                ...p,
-                card_img: pickCardImage(p),
-                media_type,
-                media_url,
-                audio_url,
-                duration,
-                platform,
-                ip,
-                scene: m.scene || "",
-                mood: m.mood || "",
-                download_url: m.download_url || "",
-                license_url: m.license_url || "",
-                created_at: p.created_at || m.created_at || null,
-              };
-            })
-          : [];
+            const duration = asStr(m.duration || "").trim();
+            const platform = asStr(m.platform || "").trim() || inferPlatform(media_url || audio_url);
 
-        // sort newest first (so your Suno drops show immediately)
+            const ip = pickIp(m);
+            const card_img = pickCardImage(p, m);
+
+            return {
+              ...p,
+              metadata: m,
+              card_img,
+              media_type,
+              media_url,
+              audio_url,
+              duration,
+              platform,
+              ip,
+              scene: asStr(m.scene || "").trim(),
+              mood: asStr(m.mood || "").trim(),
+              download_url: asStr(m.download_url || "").trim(),
+              license_url: asStr(m.license_url || "").trim(),
+              created_at: p.created_at || m.created_at || null,
+            };
+          })
+          .filter((it) => !!asStr(it.audio_url).trim() || !!asStr(it.media_url).trim());
+
         list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-
         setItems(list);
       } catch (err) {
         console.error("media fetch error:", err);
@@ -374,11 +429,9 @@ export default function MediaPage() {
     return items.filter((it) => it.ip === activeIP);
   }, [items, activeIP]);
 
-  // rails
   const dropNow = useMemo(() => filtered.slice(0, 9), [filtered]);
 
   const byType = useMemo(() => groupBy(filtered, "media_type"), [filtered]);
-
   const soundtracks = byType["soundtrack"] || [];
   const score = byType["score"] || [];
   const trailers = byType["trailer"] || [];
@@ -402,28 +455,36 @@ export default function MediaPage() {
         />
       </Head>
 
-      <Hero
-        kicker="Manyagi Media"
-        title="The Universe, In Sound & Motion"
-        lead="Soundtracks, score, trailers, audiobooks, chapter reads, and scene moments — organized by IP so every world feels alive."
-        carouselImages={carouselImages}
-        height="h-[600px]"
-      >
-        <div className="flex flex-wrap gap-3 justify-center">
-          <Link href="#drop-now" className="btn bg-blue-600 text-white py-3 px-5 rounded hover:scale-105 transition">
-            Drop Now
-          </Link>
-          <Link
-            href="#library"
-            className="btn bg-white/90 text-gray-900 border border-gray-200 py-3 px-5 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
-          >
-            Full Library
-          </Link>
-        </div>
-      </Hero>
+      {/* ✅ FIX: ensure hero does NOT overlap next section by removing negative margin usage below
+          and adding a real spacer after Hero. */}
+      <div className="relative">
+        <Hero
+          kicker="Manyagi Media"
+          title="The Universe, In Sound & Motion"
+          lead="Soundtracks, score, trailers, audiobooks, chapter reads, and scene moments — organized by IP so every world feels alive."
+          carouselImages={carouselImages}
+          height="h-[600px]"
+        >
+          <div className="flex flex-wrap gap-3 justify-center">
+            <Link href="#drop-now" className="btn bg-blue-600 text-white py-3 px-5 rounded hover:scale-105 transition">
+              Drop Now
+            </Link>
+            <Link
+              href="#library"
+              className="btn bg-white/90 text-gray-900 border border-gray-200 py-3 px-5 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
+            >
+              Full Library
+            </Link>
+          </div>
+        </Hero>
 
-      {/* IP FILTER BAR */}
-      <section className="container mx-auto px-4 -mt-8 mb-10">
+        {/* spacer so the next block never tucks under the hero (even if Hero uses absolute layers) */}
+        <div className="h-6 md:h-10" />
+      </div>
+
+      {/* ✅ FIX: removed -mt-8 (this is what was pulling the IP filter under/into the hero)
+          also make sure it sits above anything with z-10 */}
+      <section className="container mx-auto px-4 mt-2 md:mt-4 mb-10 relative z-10">
         <div className="rounded-3xl bg-white/80 dark:bg-gray-900/80 border border-amber-100/80 dark:border-gray-800 shadow-sm px-4 md:px-6 py-5 md:py-6">
           <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
             <div>
@@ -467,69 +528,19 @@ export default function MediaPage() {
         tone="warm"
       />
 
-      {/* DROP NOW */}
-      <Rail
-        id="drop-now"
-        title="Drop Now"
-        lead="Newest uploads first — perfect for fast Suno drops and instant site updates."
-        items={dropNow}
-      />
+      <Rail id="drop-now" title="Drop Now" lead="Newest uploads first — perfect for fast Suno drops and instant site updates." items={dropNow} />
 
-      {/* SOUNDTRACK + SCORE */}
-      <Rail
-        id="soundtracks"
-        title="Soundtracks"
-        lead="Main themes, scene tracks, and character motifs."
-        items={soundtracks}
-      />
-      <Rail
-        id="score"
-        title="Score"
-        lead="Cinematic underscore and mood beds for key moments."
-        items={score}
-      />
+      <Rail id="soundtracks" title="Soundtracks" lead="Main themes, scene tracks, and character motifs." items={soundtracks} />
+      <Rail id="score" title="Score" lead="Cinematic underscore and mood beds for key moments." items={score} />
 
-      {/* TRAILERS */}
-      <Rail
-        id="trailers"
-        title="Trailers"
-        lead="Visual previews powered by the music — designed for share + pitch."
-        items={trailers}
-      />
+      <Rail id="trailers" title="Trailers" lead="Visual previews powered by the music — designed for share + pitch." items={trailers} />
 
-      {/* READS */}
-      <Rail
-        id="audiobooks"
-        title="Audiobooks"
-        lead="Long-form audio versions for binge listening."
-        items={audiobooks}
-      />
-      <Rail
-        id="chapter-reads"
-        title="Chapter Preview Reads"
-        lead="Short reads to tease the book before purchase."
-        items={chapterReads}
-      />
+      <Rail id="audiobooks" title="Audiobooks" lead="Long-form audio versions for binge listening." items={audiobooks} />
+      <Rail id="chapter-reads" title="Chapter Preview Reads" lead="Short reads to tease the book before purchase." items={chapterReads} />
 
-      {/* SCENES + PLAYLISTS */}
-      <Rail
-        id="scenes"
-        title="Scenes"
-        lead="Moment-based clips: a fight, a reveal, a betrayal — each with its own sound."
-        items={scenes}
-      />
-      <Rail
-        id="playlists"
-        title="Playlists"
-        lead="Curated listening sessions per IP, character, or arc."
-        items={playlists}
-      />
-      <Rail
-        id="musicvideos"
-        title="Music Videos"
-        lead="Full cinematic edits where the song is the story."
-        items={musicVideos}
-      />
+      <Rail id="scenes" title="Scenes" lead="Moment-based clips: a fight, a reveal, a betrayal — each with its own sound." items={scenes} />
+      <Rail id="playlists" title="Playlists" lead="Curated listening sessions per IP, character, or arc." items={playlists} />
+      <Rail id="musicvideos" title="Music Videos" lead="Full cinematic edits where the song is the story." items={musicVideos} />
 
       {/* FULL LIBRARY GRID */}
       <section id="library" className="container mx-auto px-4 py-10">
@@ -555,7 +566,7 @@ export default function MediaPage() {
           <div className="text-center py-20">
             <p className="text-lg">No media items yet for this IP.</p>
             <p className="text-sm opacity-70 mt-2">
-              Add a Media post in Admin → Media with metadata.book/series and metadata.audio_url or metadata.media_url.
+              Add a Media post in Admin → Media with metadata.book/universe and metadata.audio_url or metadata.media_url.
             </p>
           </div>
         ) : (
@@ -569,9 +580,7 @@ export default function MediaPage() {
                   <img src={item.card_img} alt="" className="absolute inset-0 w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-gradient-to-tr from-black/55 to-transparent" />
                   <div className="absolute bottom-4 left-4 right-4">
-                    <div className="text-[11px] tracking-[0.28em] uppercase text-white/80">
-                      {prettyType(item.media_type)}
-                    </div>
+                    <div className="text-[11px] tracking-[0.28em] uppercase text-white/80">{prettyType(item.media_type)}</div>
                     <div className="text-xl font-bold text-white">{item.title}</div>
                   </div>
                 </div>
@@ -606,12 +615,22 @@ export default function MediaPage() {
                       {primaryCta(item)} Details →
                     </Link>
                     {item.download_url && (
-                      <a href={item.download_url} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold underline">
+                      <a
+                        href={item.download_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-semibold underline"
+                      >
                         Download →
                       </a>
                     )}
                     {item.license_url && (
-                      <a href={item.license_url} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold underline">
+                      <a
+                        href={item.license_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-semibold underline"
+                      >
                         License →
                       </a>
                     )}
