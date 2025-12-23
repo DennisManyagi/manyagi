@@ -2,7 +2,7 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import SubscriptionForm from '../../components/SubscriptionForm';
 import Recommender from '../../components/Recommender';
 import SectionIntro from '../../components/SectionIntro';
@@ -73,30 +73,251 @@ function renderContentBlocks(content = '') {
     .filter(Boolean);
 }
 
+/* -------------------------------
+   Media helpers (mirrors media.js/index.js)
+--------------------------------*/
+const asStr = (v) => (v === null || v === undefined ? '' : String(v));
+
+function safeMeta(meta) {
+  if (!meta) return {};
+  if (typeof meta === 'object') return meta;
+  if (typeof meta === 'string') {
+    try {
+      const parsed = JSON.parse(meta);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function isDirectAudio(url) {
+  const u = (url || '').toLowerCase().split('?')[0];
+  return u.endsWith('.mp3') || u.endsWith('.wav') || u.endsWith('.m4a') || u.endsWith('.ogg');
+}
+
+function inferPlatform(url) {
+  if (!url) return '';
+  const u = url.toLowerCase();
+  if (u.includes('youtube.com') || u.includes('youtu.be')) return 'YouTube';
+  if (u.includes('spotify.com')) return 'Spotify';
+  if (u.includes('soundcloud.com')) return 'SoundCloud';
+  if (u.includes('vimeo.com')) return 'Vimeo';
+  if (u.includes('tiktok.com')) return 'TikTok';
+  if (u.includes('instagram.com')) return 'Instagram';
+  if (u.includes('apple.com') || u.includes('music.apple.com')) return 'Apple Music';
+  if (u.includes('suno')) return 'Suno';
+  return '';
+}
+
+function normalizeType(t) {
+  const v = (t || '').toLowerCase().trim();
+  if (v === 'music' || v === 'track') return 'soundtrack';
+  if (v === 'chapter preview' || v === 'chapter') return 'chapter_read';
+  if (v === 'opening_theme') return 'soundtrack';
+  if (v === 'ending_theme') return 'soundtrack';
+  if (v === 'character_theme') return 'soundtrack';
+  if (v === 'battle_theme') return 'score';
+  return v || 'other';
+}
+
+function prettyType(t) {
+  const v = normalizeType(t);
+  const map = {
+    soundtrack: 'Soundtrack',
+    score: 'Score',
+    trailer: 'Trailer',
+    audiobook: 'Audiobook',
+    chapter_read: 'Chapter Read',
+    scene: 'Scene',
+    playlist: 'Playlist',
+    musicvideo: 'Music Video',
+    reel: 'Reel',
+    podcast: 'Podcast',
+    interview: 'Interview',
+    event: 'Event',
+    other: 'Media',
+  };
+  return map[v] || 'Media';
+}
+
+function bestUrl(meta, post) {
+  const audio = asStr(meta?.audio_url).trim();
+  const media = asStr(meta?.media_url).trim();
+
+  const audio2 = asStr(post?.audio_url).trim();
+  const media2 = asStr(post?.media_url).trim();
+
+  return {
+    audio_url: audio || audio2 || '',
+    media_url: media || media2 || '',
+  };
+}
+
+function pickIp(meta) {
+  return (
+    asStr(meta?.book).trim() ||
+    asStr(meta?.series).trim() ||
+    asStr(meta?.universe).trim() ||
+    asStr(meta?.ip).trim() ||
+    asStr(meta?.franchise).trim() ||
+    ''
+  );
+}
+
+function normalizeApiList(json) {
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.posts)) return json.posts;
+  if (json && Array.isArray(json.data)) return json.data;
+  if (json && Array.isArray(json.rows)) return json.rows;
+  if (json && Array.isArray(json.items)) return json.items;
+  return [];
+}
+
+function Chip({ children, tone = 'neutral' }) {
+  const cls =
+    tone === 'amber'
+      ? 'bg-amber-100/80 text-amber-800 border-amber-200 dark:bg-amber-900/25 dark:text-amber-200 dark:border-amber-800/40'
+      : tone === 'blue'
+      ? 'bg-blue-100/80 text-blue-800 border-blue-200 dark:bg-blue-900/25 dark:text-blue-200 dark:border-blue-800/40'
+      : tone === 'purple'
+      ? 'bg-purple-100/80 text-purple-800 border-purple-200 dark:bg-purple-900/25 dark:text-purple-200 dark:border-purple-800/40'
+      : 'bg-white/70 text-gray-800 border-gray-200 dark:bg-gray-900/60 dark:text-gray-100 dark:border-gray-700';
+
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs border ${cls}`}>
+      {children}
+    </span>
+  );
+}
+
+function MediaEmbed({ mediaUrl, audioUrl }) {
+  const url = (audioUrl || mediaUrl || '').trim();
+  if (!url) return null;
+
+  if (isDirectAudio(url)) {
+    return (
+      <div className="w-full rounded-2xl border border-gray-200/80 dark:border-gray-700/70 bg-white/70 dark:bg-gray-900/50 p-4">
+        <audio controls className="w-full">
+          <source src={url} />
+        </audio>
+      </div>
+    );
+  }
+
+  const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
+  const isSpotify = url.includes('open.spotify.com');
+  const isSoundCloud = url.includes('soundcloud.com');
+  const isVimeo = url.includes('vimeo.com');
+
+  if (isYouTube) {
+    let embed = url;
+    if (url.includes('watch?v=')) {
+      const id = url.split('watch?v=')[1].split('&')[0];
+      embed = `https://www.youtube.com/embed/${id}`;
+    } else if (url.includes('youtu.be/')) {
+      const id = url.split('youtu.be/')[1].split(/[?&]/)[0];
+      embed = `https://www.youtube.com/embed/${id}`;
+    }
+    return (
+      <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-gray-300/70 dark:border-gray-700/70 shadow-sm">
+        <iframe src={embed} title="Media Preview" className="w-full h-full" allowFullScreen />
+      </div>
+    );
+  }
+
+  if (isSpotify) {
+    const embed = url.replace('open.spotify.com/', 'open.spotify.com/embed/');
+    return (
+      <div className="w-full rounded-2xl overflow-hidden border border-gray-300/70 dark:border-gray-700/70 shadow-sm">
+        <iframe
+          src={embed}
+          title="Spotify Player"
+          className="w-full h-[152px] md:h-[232px]"
+          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+        />
+      </div>
+    );
+  }
+
+  if (isSoundCloud) {
+    const embed = `https://w.soundcloud.com/player/?url=${encodeURIComponent(
+      url
+    )}&auto_play=false&show_teaser=true`;
+    return (
+      <div className="w-full rounded-2xl overflow-hidden border border-gray-300/70 dark:border-gray-700/70 shadow-sm">
+        <iframe src={embed} title="SoundCloud Player" className="w-full h-[166px]" allow="autoplay" />
+      </div>
+    );
+  }
+
+  if (isVimeo) {
+    let embed = url;
+    const parts = url.split('vimeo.com/');
+    if (parts[1]) {
+      const id = parts[1].split(/[?&]/)[0];
+      embed = `https://player.vimeo.com/video/${id}`;
+    }
+    return (
+      <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-gray-300/70 dark:border-gray-700/70 shadow-sm">
+        <iframe src={embed} title="Vimeo Player" className="w-full h-full" allowFullScreen />
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center justify-center w-full bg-blue-600 text-white text-sm font-semibold py-3 px-4 rounded-full hover:bg-blue-700 transition shadow-sm"
+    >
+      Open Link
+    </a>
+  );
+}
+
 export default function BlogPost() {
   const router = useRouter();
   const { slug } = router.query;
 
   const [post, setPost] = useState(null);
+  const [linkedMedia, setLinkedMedia] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!slug) return;
 
     (async () => {
+      setLoading(true);
+      setPost(null);
+      setLinkedMedia(null);
+
       try {
         const res = await fetch(`/api/posts/${slug}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.error) throw new Error(data?.error || 'Post not found');
 
-        if (!res.ok || data.error) {
-          throw new Error(data.error || 'Post not found');
-        }
+        const m0 = safeMeta(data?.metadata);
+        const u0 = bestUrl(m0, data || {});
+        const hasDirectMedia = !!asStr(u0.audio_url).trim() || !!asStr(u0.media_url).trim();
 
         setPost(data);
+
+        if (!hasDirectMedia) {
+          try {
+            const res2 = await fetch(`/api/posts?division=media&limit=50`);
+            const json2 = await res2.json().catch(() => ({}));
+            const raw = normalizeApiList(json2);
+            const match = (raw || []).find((p) => asStr(p?.slug) === asStr(slug));
+            if (match) setLinkedMedia(match);
+          } catch (e2) {
+            console.warn('Media lookup failed:', e2);
+          }
+        }
       } catch (e) {
         console.error('Blog post fetch error:', e);
-
-        // Safe fallback article
         setPost({
           id: 'welcome-fallback',
           title: 'Welcome to the Manyagi Universe',
@@ -107,6 +328,7 @@ export default function BlogPost() {
           division: 'site',
           content:
             '# Welcome to the Manyagi Universe\n\nThis is a starter article used when the requested post cannot be loaded.',
+          metadata: {},
         });
       } finally {
         setLoading(false);
@@ -114,100 +336,254 @@ export default function BlogPost() {
     })();
   }, [slug]);
 
+  const mediaSource = linkedMedia || post;
+
+  const meta = useMemo(() => safeMeta(mediaSource?.metadata), [mediaSource?.metadata]);
+  const urls = useMemo(() => bestUrl(meta, mediaSource || {}), [meta, mediaSource]);
+
+  const audio_url = urls.audio_url;
+  const media_url = urls.media_url;
+  const hasMedia = !!asStr(audio_url).trim() || !!asStr(media_url).trim();
+
+  const platform = useMemo(
+    () => asStr(meta?.platform).trim() || inferPlatform(media_url || audio_url),
+    [meta, media_url, audio_url]
+  );
+
+  const ip = useMemo(() => pickIp(meta), [meta]);
+  const mediaType = useMemo(() => prettyType(meta?.media_type || ''), [meta]);
+
+  const showMediaPanel =
+    hasMedia || asStr(post?.division).toLowerCase() === 'media' || !!linkedMedia;
+
+  const metaLineParts = useMemo(() => {
+    if (!post) return [];
+    return [
+      formatDate(post.created_at),
+      post.division ? formatDivision(post.division) : null,
+      getReadingTime(post.content || ''),
+    ].filter(Boolean);
+  }, [post]);
+
+  const duration = asStr(meta?.duration).trim();
+  const mood = asStr(meta?.mood).trim();
+  const scene = asStr(meta?.scene).trim();
+
+  const downloadUrl = asStr(meta?.download_url).trim();
+  const licenseUrl = asStr(meta?.license_url).trim();
+  const rightsNote = asStr(meta?.rights_note).trim(); // optional
+  const contactEmail = asStr(meta?.contact_email).trim() || 'studios@manyagi.net';
+
+  const mediaSlug = asStr(linkedMedia?.slug || post?.slug).trim();
+
   if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-16 text-center">
-        Loading post…
-      </div>
-    );
+    return <div className="container mx-auto px-4 py-16 text-center">Loading post…</div>;
   }
-
   if (!post) {
-    return (
-      <div className="container mx-auto px-4 py-16 text-center">
-        Post not found.
-      </div>
-    );
+    return <div className="container mx-auto px-4 py-16 text-center">Post not found.</div>;
   }
-
-  const metaLineParts = [
-    formatDate(post.created_at),
-    post.division ? formatDivision(post.division) : null,
-    getReadingTime(post.content),
-  ].filter(Boolean);
 
   return (
     <>
       <Head>
         <title>{post.title} — Manyagi Blog</title>
-        <meta
-          name="description"
-          content={post.excerpt || 'Article from the Manyagi Blog.'}
-        />
+        <meta name="description" content={post.excerpt || 'Article from the Manyagi Blog.'} />
       </Head>
 
-      {/* Editorial-style header using SectionIntro */}
-      <SectionIntro
-        id="post-header"
-        kicker="Manyagi Blog"
-        title={post.title}
-        lead={post.excerpt || 'A new dispatch from the Manyagi universe.'}
-        tone="neutral"
-        align="center"
-        maxWidth="max-w-3xl"
-      >
-        {metaLineParts.length > 0 && (
-          <p className="mt-3 text-xs md:text-sm text-gray-500">
-            {metaLineParts.join(' • ')}
-          </p>
-        )}
-      </SectionIntro>
-
-      {/* Article card */}
-      <article className="container mx-auto px-4 pb-16">
-        <div className="max-w-4xl mx-auto rounded-3xl border border-gray-100 bg-white/90 dark:bg-gray-900/90 dark:border-gray-800 shadow-sm px-4 py-6 md:px-8 md:py-8">
-          {/* Back link */}
-          <div className="mb-4 text-xs">
-            <Link
-              href="/blog"
-              className="inline-flex items-center text-gray-500 hover:text-blue-600"
-            >
-              ← Back to Blog
-            </Link>
-          </div>
-
-          {/* Featured image */}
-          {post.featured_image && (
-            <div className="mb-8 overflow-hidden rounded-2xl bg-black/5">
-              <img
-                src={post.featured_image || PLACEHOLDER_IMAGE}
-                alt={post.title}
-                className="w-full h-64 md:h-80 object-cover"
-              />
-            </div>
-          )}
-
-          {/* Content */}
-          <div className="prose max-w-none prose-sm md:prose-base dark:prose-invert">
-            {renderContentBlocks(post.content)}
-          </div>
+      {/* Premium background wash */}
+      <div className="relative">
+        <div className="absolute inset-0 -z-10">
+          <div className="h-[520px] bg-gradient-to-b from-amber-200/60 via-amber-100/30 to-transparent dark:from-amber-900/20 dark:via-amber-900/10" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.14),transparent_55%)]" />
         </div>
-      </article>
 
-      {/* Newsletter below article */}
-      <section
-        id="subscribe"
-        className="container mx-auto px-4 pt-0 pb-16"
-      >
-        <SubscriptionForm
-          formId="8427852"
-          uid="637df68a05"
-          title="Subscribe to Blog Updates"
-          description="Weekly playbooks and progress logs from the Manyagi build — no spam, just signal."
-        />
-      </section>
+        <SectionIntro
+          id="post-header"
+          kicker="Manyagi Blog"
+          title={post.title}
+          lead={post.excerpt || 'A new dispatch from the Manyagi universe.'}
+          tone="neutral"
+          align="center"
+          maxWidth="max-w-4xl"
+        >
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            {metaLineParts.length > 0 && <Chip>{metaLineParts.join(' • ')}</Chip>}
+            {mediaType && <Chip tone="amber">{mediaType}</Chip>}
+            {platform && <Chip tone="blue">{platform}</Chip>}
+            {duration && <Chip tone="purple">{duration}</Chip>}
+          </div>
+        </SectionIntro>
 
-      <Recommender />
+        <article className="container mx-auto px-4 pb-16">
+          <div className="max-w-5xl mx-auto">
+            {/* Back row */}
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <Link
+                href="/blog"
+                className="inline-flex items-center text-xs text-gray-600 hover:text-blue-600 dark:text-gray-300"
+              >
+                ← Back to Blog
+              </Link>
+
+              {/* Executive quick actions (always visible) */}
+              <div className="flex gap-2 flex-wrap justify-end">
+                <Link
+                  href="/media"
+                  className="px-4 py-2 rounded-full text-xs font-semibold border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/60 hover:bg-white dark:hover:bg-gray-900 transition shadow-sm"
+                >
+                  Media Library →
+                </Link>
+                {mediaSlug && (
+                  <Link
+                    href={`/media/${mediaSlug}`}
+                    className="px-4 py-2 rounded-full text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm"
+                  >
+                    Media Detail →
+                  </Link>
+                )}
+                <a
+                  href={`mailto:${contactEmail}?subject=${encodeURIComponent(
+                    `Licensing / Commercial Inquiry — ${post.title}`
+                  )}`}
+                  className="px-4 py-2 rounded-full text-xs font-semibold border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50/80 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100/70 dark:hover:bg-emerald-900/30 transition shadow-sm"
+                >
+                  Contact Licensing
+                </a>
+              </div>
+            </div>
+
+            {/* MAIN CARD */}
+            <div className="rounded-[28px] border border-gray-200/70 dark:border-gray-800 bg-white/80 dark:bg-gray-950/60 backdrop-blur shadow-[0_10px_50px_-20px_rgba(0,0,0,0.35)] overflow-hidden">
+              {/* Media panel: premium look */}
+              {showMediaPanel && hasMedia && (
+                <div className="p-6 md:p-8 border-b border-gray-200/70 dark:border-gray-800">
+                  <div className="relative rounded-[22px] overflow-hidden">
+                    {/* gradient border */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-amber-200/60 via-blue-200/40 to-purple-200/50 dark:from-amber-900/30 dark:via-blue-900/20 dark:to-purple-900/25" />
+                    <div className="relative m-[1px] rounded-[21px] bg-white/75 dark:bg-gray-950/65 backdrop-blur p-5 md:p-6 border border-white/40 dark:border-gray-800/60">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold tracking-[0.26em] uppercase text-gray-700/70 dark:text-gray-200/70">
+                            Executive Preview
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {ip && <Chip tone="amber">{ip}</Chip>}
+                            {mediaType && <Chip>{mediaType}</Chip>}
+                            {platform && <Chip tone="blue">{platform}</Chip>}
+                            {duration && <Chip tone="purple">{duration}</Chip>}
+                          </div>
+
+                          {linkedMedia && (
+                            <p className="mt-3 text-xs text-gray-600 dark:text-gray-300">
+                              Linked to a Media drop with the same slug — built for fast review + licensing.
+                            </p>
+                          )}
+
+                          {scene && (
+                            <p className="mt-3 text-sm text-gray-800 dark:text-gray-100 leading-relaxed">
+                              <span className="font-semibold">Scene intent:</span> {scene}
+                            </p>
+                          )}
+
+                          {mood && (
+                            <p className="mt-2 text-sm text-gray-700 dark:text-gray-200">
+                              <span className="font-semibold">Mood:</span> {mood}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2 flex-wrap md:justify-end">
+                          {licenseUrl && (
+                            <a
+                              href={licenseUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-4 py-2 rounded-full text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm"
+                            >
+                              License →
+                            </a>
+                          )}
+                          {downloadUrl && (
+                            <a
+                              href={downloadUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-4 py-2 rounded-full text-sm font-semibold bg-gray-900 text-white hover:bg-black transition shadow-sm"
+                            >
+                              Download →
+                            </a>
+                          )}
+                          <a
+                            href={`mailto:${contactEmail}?subject=${encodeURIComponent(
+                              `Licensing / Commercial Inquiry — ${post.title}`
+                            )}`}
+                            className="px-4 py-2 rounded-full text-sm font-semibold border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/60 hover:bg-gray-50 dark:hover:bg-gray-900 transition shadow-sm"
+                          >
+                            Inquire →
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* Player */}
+                      <div className="mt-5">
+                        <MediaEmbed mediaUrl={media_url} audioUrl={audio_url} />
+                      </div>
+
+                      {/* Rights row */}
+                      <div className="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div className="flex flex-wrap gap-2">
+                          <Chip>Commercial-ready</Chip>
+                          <Chip tone="blue">Fast review</Chip>
+                          <Chip tone="amber">Option / Sync</Chip>
+                          {!!rightsNote && <Chip>{rightsNote}</Chip>}
+                        </div>
+
+                        <div className="text-xs text-gray-600 dark:text-gray-300">
+                          For licensing & commercialization: <span className="font-semibold">{contactEmail}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Featured image */}
+              {post.featured_image && (
+                <div className="px-6 md:px-8 pt-6 md:pt-8">
+                  <div className="overflow-hidden rounded-2xl bg-black/5 border border-gray-200/60 dark:border-gray-800">
+                    <img
+                      src={post.featured_image || PLACEHOLDER_IMAGE}
+                      alt={post.title}
+                      className="w-full h-64 md:h-80 object-cover"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Content */}
+              <div className="px-6 md:px-8 py-6 md:py-8">
+                <div className="prose max-w-none prose-sm md:prose-base dark:prose-invert">
+                  {renderContentBlocks(post.content)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <section id="subscribe" className="container mx-auto px-4 pt-0 pb-16">
+          <div className="max-w-4xl mx-auto">
+            <SubscriptionForm
+              formId="8427852"
+              uid="637df68a05"
+              title="Subscribe to Blog Updates"
+              description="Weekly playbooks and progress logs from the Manyagi build — no spam, just signal."
+            />
+          </div>
+        </section>
+
+        <Recommender />
+      </div>
     </>
   );
 }

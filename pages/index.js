@@ -1,7 +1,7 @@
 // pages/index.js
 import Head from 'next/head';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { addToCart } from '../lib/cartSlice';
 
@@ -75,6 +75,182 @@ const pickTechImage = (p) =>
   p?.metadata?.screenshot ||
   'https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/app-placeholder.webp';
 
+// ---------- Media helpers (mirrors /pages/media.js logic) ----------
+
+const asStr = (v) => (v === null || v === undefined ? '' : String(v));
+
+function safeMeta(meta) {
+  if (!meta) return {};
+  if (typeof meta === 'object') return meta;
+  if (typeof meta === 'string') {
+    try {
+      const parsed = JSON.parse(meta);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function isDirectAudio(url) {
+  const u = (url || '').toLowerCase().split('?')[0];
+  return u.endsWith('.mp3') || u.endsWith('.wav') || u.endsWith('.m4a') || u.endsWith('.ogg');
+}
+
+function inferPlatform(url) {
+  if (!url) return '';
+  const u = url.toLowerCase();
+  if (u.includes('youtube.com') || u.includes('youtu.be')) return 'YouTube';
+  if (u.includes('spotify.com')) return 'Spotify';
+  if (u.includes('soundcloud.com')) return 'SoundCloud';
+  if (u.includes('vimeo.com')) return 'Vimeo';
+  if (u.includes('tiktok.com')) return 'TikTok';
+  if (u.includes('instagram.com')) return 'Instagram';
+  if (u.includes('apple.com') || u.includes('music.apple.com')) return 'Apple Music';
+  if (u.includes('suno')) return 'Suno';
+  return '';
+}
+
+function normalizeType(t) {
+  const v = (t || '').toLowerCase().trim();
+  if (v === 'music' || v === 'track') return 'soundtrack';
+  if (v === 'chapter preview' || v === 'chapter') return 'chapter_read';
+  if (v === 'opening_theme') return 'soundtrack';
+  if (v === 'ending_theme') return 'soundtrack';
+  if (v === 'character_theme') return 'soundtrack';
+  if (v === 'battle_theme') return 'score';
+  return v || 'other';
+}
+
+function bestUrl(meta, post) {
+  const audio = asStr(meta?.audio_url).trim();
+  const media = asStr(meta?.media_url).trim();
+
+  const audio2 = asStr(post?.audio_url).trim();
+  const media2 = asStr(post?.media_url).trim();
+
+  return {
+    audio_url: audio || audio2 || '',
+    media_url: media || media2 || '',
+  };
+}
+
+function pickCardImage(post, meta) {
+  return (
+    meta?.thumbnail_url ||
+    post.thumbnail_url ||
+    post.featured_image ||
+    meta?.cover_url ||
+    meta?.image_url ||
+    '/placeholder.png'
+  );
+}
+
+function pickIp(meta) {
+  return (
+    asStr(meta?.book).trim() ||
+    asStr(meta?.series).trim() ||
+    asStr(meta?.universe).trim() ||
+    asStr(meta?.ip).trim() ||
+    asStr(meta?.franchise).trim() ||
+    ''
+  );
+}
+
+function normalizeApiList(json) {
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.posts)) return json.posts;
+  if (json && Array.isArray(json.data)) return json.data;
+  if (json && Array.isArray(json.rows)) return json.rows;
+  if (json && Array.isArray(json.items)) return json.items;
+  return [];
+}
+
+function MediaEmbed({ mediaUrl, audioUrl }) {
+  const url = (audioUrl || mediaUrl || '').trim();
+  if (!url) return null;
+
+  if (isDirectAudio(url)) {
+    return (
+      <div className="w-full rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/60 p-3">
+        <audio controls className="w-full">
+          <source src={url} />
+        </audio>
+      </div>
+    );
+  }
+
+  const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
+  const isSpotify = url.includes('open.spotify.com');
+  const isSoundCloud = url.includes('soundcloud.com');
+  const isVimeo = url.includes('vimeo.com');
+
+  if (isYouTube) {
+    let embed = url;
+    if (url.includes('watch?v=')) {
+      const id = url.split('watch?v=')[1].split('&')[0];
+      embed = `https://www.youtube.com/embed/${id}`;
+    } else if (url.includes('youtu.be/')) {
+      const id = url.split('youtu.be/')[1].split(/[?&]/)[0];
+      embed = `https://www.youtube.com/embed/${id}`;
+    }
+    return (
+      <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-gray-300 dark:border-gray-700">
+        <iframe src={embed} title="Media Preview" className="w-full h-full" allowFullScreen />
+      </div>
+    );
+  }
+
+  if (isSpotify) {
+    const embed = url.replace('open.spotify.com/', 'open.spotify.com/embed/');
+    return (
+      <div className="w-full rounded-2xl overflow-hidden border border-gray-300 dark:border-gray-700">
+        <iframe
+          src={embed}
+          title="Spotify Player"
+          className="w-full h-[152px] md:h-[232px]"
+          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+        />
+      </div>
+    );
+  }
+
+  if (isSoundCloud) {
+    const embed = `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&auto_play=false&show_teaser=true`;
+    return (
+      <div className="w-full rounded-2xl overflow-hidden border border-gray-300 dark:border-gray-700">
+        <iframe src={embed} title="SoundCloud Player" className="w-full h-[166px]" allow="autoplay" />
+      </div>
+    );
+  }
+
+  if (isVimeo) {
+    let embed = url;
+    const parts = url.split('vimeo.com/');
+    if (parts[1]) {
+      const id = parts[1].split(/[?&]/)[0];
+      embed = `https://player.vimeo.com/video/${id}`;
+    }
+    return (
+      <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-gray-300 dark:border-gray-700">
+        <iframe src={embed} title="Vimeo Player" className="w-full h-full" allowFullScreen />
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center justify-center w-full bg-blue-600 text-white text-sm font-semibold py-2 px-3 rounded-full hover:bg-blue-700 transition"
+    >
+      Open Link
+    </a>
+  );
+}
+
 export default function Home() {
   const dispatch = useDispatch();
 
@@ -87,6 +263,9 @@ export default function Home() {
 
   const [techApps, setTechApps] = useState([]); // from /api/posts?division=tech
   const [blogPosts, setBlogPosts] = useState([]);
+
+  // ✅ NEW: media items for home page "Listen Now"
+  const [mediaItems, setMediaItems] = useState([]);
 
   // --- Fetch site config + products (books/merch/featured) ---
   useEffect(() => {
@@ -179,6 +358,57 @@ export default function Home() {
       } catch (e) {
         console.error('Home tech fetch error:', e);
         setTechApps([]);
+      }
+    })();
+  }, []);
+
+  // ✅ NEW: Fetch Media items (same source style as /pages/media.js)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/posts?division=media&limit=12');
+        const json = await res.json().catch(() => ({}));
+        const raw = normalizeApiList(json);
+
+        const list = (raw || [])
+          .map((p) => {
+            const m = safeMeta(p.metadata);
+            const media_type = normalizeType(m.media_type || '');
+            const urls = bestUrl(m, p);
+            const audio_url = urls.audio_url;
+            const media_url = urls.media_url;
+
+            const duration = asStr(m.duration || '').trim();
+            const platform = asStr(m.platform || '').trim() || inferPlatform(media_url || audio_url);
+            const ip = pickIp(m);
+            const card_img = pickCardImage(p, m);
+
+            return {
+              id: p.id,
+              slug: p.slug,
+              title: p.title,
+              excerpt: p.excerpt || '',
+              content: p.content || '',
+              created_at: p.created_at || m.created_at || null,
+              metadata: m,
+              media_type,
+              audio_url,
+              media_url,
+              duration,
+              platform,
+              ip,
+              card_img,
+              scene: asStr(m.scene || '').trim(),
+              mood: asStr(m.mood || '').trim(),
+            };
+          })
+          .filter((it) => !!asStr(it.audio_url).trim() || !!asStr(it.media_url).trim())
+          .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+        setMediaItems(list.slice(0, 6)); // show 6 on home
+      } catch (e) {
+        console.error('Home media fetch error:', e);
+        setMediaItems([]);
       }
     })();
   }, []);
@@ -374,12 +604,67 @@ export default function Home() {
     );
   };
 
+  // ✅ NEW: Media card with inline player
+  const renderMediaCard = (item) => {
+    const chips = [
+      item.media_type ? item.media_type : null,
+      item.platform ? item.platform : null,
+      item.duration ? item.duration : null,
+      item.ip ? item.ip : null,
+    ].filter(Boolean);
+
+    const desc = item.scene || item.excerpt || 'New media drop from the Manyagi Universe.';
+
+    return (
+      <Card
+        key={item.slug || item.id}
+        title={item.title}
+        description={desc}
+        image={item.card_img}
+        category="media"
+      >
+        {chips.length > 0 && (
+          <div className="flex flex-wrap gap-2 justify-center mb-3">
+            {chips.slice(0, 4).map((c) => (
+              <span
+                key={c}
+                className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-2">
+          <MediaEmbed mediaUrl={item.media_url} audioUrl={item.audio_url} />
+        </div>
+
+        <div className="pt-3 flex justify-center gap-3 flex-wrap">
+          <Link
+            href={`/media/${item.slug}`}
+            className="text-sm font-semibold text-blue-600 hover:underline"
+          >
+            Listen / View →{/* keeps it general for video/audio */}
+          </Link>
+          <Link
+            href="/media"
+            className="text-sm font-semibold text-gray-700 dark:text-gray-200 hover:underline"
+          >
+            Full Media Library →
+          </Link>
+        </div>
+      </Card>
+    );
+  };
+
   // Micro-nav rails under hero
   const rails = [
     { label: 'Read', href: '#books' },
     { label: 'Wear', href: '#merch' },
     { label: 'Trade', href: '#featured' },
     { label: 'Build', href: '#tech' },
+    { label: 'Listen', href: '#listen' }, // ✅ NEW
     { label: 'Watch', href: '#blog' },
     { label: 'Live', href: '#divisions' },
   ];
@@ -652,6 +937,35 @@ export default function Home() {
                 )}
               </Card>
             ))}
+          </div>
+        )}
+      </section>
+
+      {/* ✅ NEW: LISTEN NOW (Media player section on Home) */}
+      <SectionIntro
+        id="listen"
+        kicker="Manyagi Media"
+        title="Listen Now"
+        lead="Fresh soundtracks and audio drops — playable right here. Built for fans and Hollywood scanning the vibe in seconds."
+        tone="card"
+        align="center"
+      >
+        <Link
+          href="/media"
+          className="inline-flex items-center text-xs font-semibold text-blue-700 hover:underline"
+        >
+          Open the Media Library →
+        </Link>
+      </SectionIntro>
+
+      <section className="container mx-auto px-4 pb-16">
+        {mediaItems.length === 0 ? (
+          <p className="text-center text-sm opacity-70">
+            No media drops yet. Upload a track in Admin → Media (it will appear here automatically).
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {mediaItems.map((item) => renderMediaCard(item))}
           </div>
         )}
       </section>
