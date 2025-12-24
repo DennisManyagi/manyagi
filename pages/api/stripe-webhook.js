@@ -33,10 +33,9 @@ export default async function handler(req, res) {
     switch (event.type) {
       case 'checkout.session.completed': {
         // pull full session w/ expansions so we get payment info
-        const session = await stripe.checkout.sessions.retrieve(
-          event.data.object.id,
-          { expand: ['customer_details', 'shipping_details', 'payment_intent'] }
-        );
+        const session = await stripe.checkout.sessions.retrieve(event.data.object.id, {
+          expand: ['customer_details', 'shipping_details', 'payment_intent'],
+        });
 
         //
         // ========== REALTY BOOKING FLOW ==========
@@ -156,12 +155,77 @@ export default async function handler(req, res) {
         }
 
         //
+        // ========== MANYAGI STUDIOS ACCESS (DIGITAL ENTITLEMENT) ==========
+        //
+        if (session?.metadata?.type === 'studio_access') {
+          const universe_id = session?.metadata?.universe_id || null;
+          const tier = (session?.metadata?.tier || '').toLowerCase();
+          const user_id = session?.metadata?.user_id || null;
+
+          if (!universe_id || !user_id || !tier) {
+            console.warn('[studio_access] Missing required metadata', session?.metadata);
+            break; // don’t fall into merch flow
+          }
+
+          // Optional: set evaluation windows by tier (change anytime)
+          const now = new Date();
+          const expires = new Date(now);
+
+          // choose your windows; these match what you described earlier
+          if (tier === 'priority') expires.setDate(expires.getDate() + 45);
+          else if (tier === 'producer') expires.setDate(expires.getDate() + 90);
+          else if (tier === 'packaging') expires.setFullYear(expires.getFullYear() + 1);
+          else {
+            console.warn('[studio_access] Invalid tier in metadata:', tier);
+            break;
+          }
+
+          try {
+            await supabaseAdmin.from('studio_entitlements').upsert(
+              {
+                user_id,
+                universe_id,
+                tier,
+                status: 'active',
+                expires_at: expires.toISOString(),
+                stripe_session_id: session.id,
+                stripe_customer_id: session.customer ? String(session.customer) : null,
+                created_at: new Date().toISOString(),
+              },
+              { onConflict: 'stripe_session_id' }
+            );
+          } catch (dbErr) {
+            console.error('[studio_access] upsert failed:', dbErr?.message || dbErr);
+            throw dbErr;
+          }
+
+          // OPTIONAL: email receipt/access (you already have sendEmail wired)
+          // const to = session?.customer_details?.email;
+          // if (to) {
+          //   try {
+          //     const site = process.env.NEXT_PUBLIC_SITE_URL || 'https://manyagi.net';
+          //     const universeSlug = session?.metadata?.universe_slug || '';
+          //     const link = universeSlug ? `${site}/studios/${universeSlug}` : `${site}/studios`;
+          //     await sendEmail({
+          //       to,
+          //       subject: 'Manyagi Studios — Access Granted',
+          //       html: `<h1>Access Granted ✅</h1><p>Your ${tier} access is active.</p><p><a href="${link}">Open your studio package</a></p>`,
+          //     });
+          //   } catch (e) {
+          //     console.warn('[studio_access] sendEmail failed:', e?.message || e);
+          //   }
+          // }
+
+          break; // IMPORTANT: stop here so it doesn't fall into Printful flow
+        }
+
+        //
         // ========== PHYSICAL MERCH (Printful) ==========
         //
         {
           const email = session?.customer_details?.email || null;
-          const name  = session?.customer_details?.name || null;
-          const addr  = session?.shipping_details?.address || null;
+          const name = session?.customer_details?.name || null;
+          const addr = session?.shipping_details?.address || null;
 
           // mark normal product order paid
           await supabaseAdmin
@@ -200,13 +264,9 @@ export default async function handler(req, res) {
 
               const meta = product?.metadata || {};
               const syncVariantId =
-                meta.printful_sync_variant_id ||
-                meta.printful_sync_variant ||
-                null;
+                meta.printful_sync_variant_id || meta.printful_sync_variant || null;
 
-              const haveShippingAddress = Boolean(
-                session?.shipping_details?.address?.line1
-              );
+              const haveShippingAddress = Boolean(session?.shipping_details?.address?.line1);
 
               if (syncVariantId && haveShippingAddress) {
                 const a = session.shipping_details.address;
@@ -260,26 +320,18 @@ export default async function handler(req, res) {
                       fulfillment_provider: 'printful',
                       fulfillment_status: 'error',
                       fulfillment_error: String(
-                        pfErr?.response?.data?.error ||
-                          pfErr.message ||
-                          'unknown'
+                        pfErr?.response?.data?.error || pfErr.message || 'unknown'
                       ),
                       updated_at: new Date().toISOString(),
                     })
                     .eq('stripe_session_id', session.id);
 
-                  console.warn(
-                    'Printful error:',
-                    pfErr?.response?.data || pfErr.message
-                  );
+                  console.warn('Printful error:', pfErr?.response?.data || pfErr.message);
                 }
               }
             }
           } catch (fulfillErr) {
-            console.warn(
-              'Fulfillment skipped:',
-              fulfillErr?.response?.data || fulfillErr.message
-            );
+            console.warn('Fulfillment skipped:', fulfillErr?.response?.data || fulfillErr.message);
           }
         }
 
@@ -292,24 +344,16 @@ export default async function handler(req, res) {
       case 'customer.subscription.created': {
         const subscription = event.data.object;
         const customer = await stripe.customers.retrieve(subscription.customer);
-        const telegramId =
-          subscription?.metadata?.telegramId ||
-          customer?.metadata?.telegramId;
+        const telegramId = subscription?.metadata?.telegramId || customer?.metadata?.telegramId;
 
         if (telegramId && !isNaN(telegramId)) {
           try {
-            await axios.post(
-              `https://api.telegram.org/bot${telegramBotToken}/unbanChatMember`,
-              {
-                chat_id: telegramGroupChatId,
-                user_id: telegramId,
-              }
-            );
+            await axios.post(`https://api.telegram.org/bot${telegramBotToken}/unbanChatMember`, {
+              chat_id: telegramGroupChatId,
+              user_id: telegramId,
+            });
           } catch (tgErr) {
-            console.warn(
-              'Telegram unban (created) error:',
-              tgErr?.response?.data || tgErr.message
-            );
+            console.warn('Telegram unban (created) error:', tgErr?.response?.data || tgErr.message);
           }
         }
         break;
@@ -331,25 +375,17 @@ export default async function handler(req, res) {
           invoice?.metadata?.telegramId;
 
         if (!telegramId || isNaN(telegramId)) {
-          console.warn(
-            `[stripe-webhook] Missing/invalid Telegram ID, event=${event.type}, invoice=${invoice.id}`
-          );
+          console.warn(`[stripe-webhook] Missing/invalid Telegram ID, event=${event.type}, invoice=${invoice.id}`);
           break;
         }
 
         try {
-          await axios.post(
-            `https://api.telegram.org/bot${telegramBotToken}/unbanChatMember`,
-            {
-              chat_id: telegramGroupChatId,
-              user_id: telegramId,
-            }
-          );
+          await axios.post(`https://api.telegram.org/bot${telegramBotToken}/unbanChatMember`, {
+            chat_id: telegramGroupChatId,
+            user_id: telegramId,
+          });
         } catch (tgErr) {
-          console.warn(
-            'Telegram unban error:',
-            tgErr?.response?.data || tgErr.message
-          );
+          console.warn('Telegram unban error:', tgErr?.response?.data || tgErr.message);
         }
 
         const periodStart = subscription?.current_period_start
@@ -373,18 +409,12 @@ export default async function handler(req, res) {
 
         try {
           const message = `Welcome to Manyagi Capital Signals! Join our Telegram group for real-time updates: ${process.env.TELEGRAM_INVITE_LINK}`;
-          await axios.post(
-            `https://api.telegram.org/bot${telegramBotToken}/sendMessage`,
-            {
-              chat_id: telegramId,
-              text: message,
-            }
-          );
+          await axios.post(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+            chat_id: telegramId,
+            text: message,
+          });
         } catch (tgMsgErr) {
-          console.warn(
-            'Telegram welcome message error:',
-            tgMsgErr?.response?.data || tgMsgErr.message
-          );
+          console.warn('Telegram welcome message error:', tgMsgErr?.response?.data || tgMsgErr.message);
         }
         break;
       }
@@ -393,28 +423,18 @@ export default async function handler(req, res) {
       case 'invoice.payment_failed': {
         const obj = event.data.object;
         const customer = await stripe.customers.retrieve(obj.customer);
-        const telegramId =
-          obj.metadata?.telegramId || customer?.metadata?.telegramId;
+        const telegramId = obj.metadata?.telegramId || customer?.metadata?.telegramId;
 
         if (telegramId) {
-          await supabaseAdmin
-            .from('subscriptions')
-            .delete()
-            .eq('telegram_id', String(telegramId));
+          await supabaseAdmin.from('subscriptions').delete().eq('telegram_id', String(telegramId));
 
           try {
-            await axios.post(
-              `https://api.telegram.org/bot${telegramBotToken}/banChatMember`,
-              {
-                chat_id: telegramGroupChatId,
-                user_id: telegramId,
-              }
-            );
+            await axios.post(`https://api.telegram.org/bot${telegramBotToken}/banChatMember`, {
+              chat_id: telegramGroupChatId,
+              user_id: telegramId,
+            });
           } catch (tgBanErr) {
-            console.warn(
-              'Telegram ban error:',
-              tgBanErr?.response?.data || tgBanErr.message
-            );
+            console.warn('Telegram ban error:', tgBanErr?.response?.data || tgBanErr.message);
           }
         }
         break;

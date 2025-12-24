@@ -1,11 +1,49 @@
 // pages/api/checkout/create-session.js
-import Stripe from 'stripe';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import Stripe from "stripe";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
+
+// -------------------------------
+// small helpers
+// -------------------------------
+function asStr(v) {
+  return v === null || v === undefined ? "" : String(v);
+}
+
+function safeJSON(v) {
+  if (!v) return {};
+  if (typeof v === "object") return v;
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function normalizeStudioTier(t) {
+  const v = asStr(t).trim().toLowerCase();
+  if (v === "priority" || v === "producer" || v === "packaging") return v;
+  return "";
+}
+
+async function getAuthedUserIdFromBearer(req) {
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!token) return { userId: null, token: null };
+
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data?.user?.id) return { userId: null, token: null };
+
+  return { userId: data.user.id, token };
+}
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
     const {
@@ -14,59 +52,55 @@ export default async function handler(req, res) {
       cancel_url,
 
       // SUBSCRIPTION path
-      mode,                 // 'subscription' => create subscription checkout
-      price_id,             // optional override; falls back to env
-      email,                // optional prefill for subscription
-      telegramId,           // from Signals form
+      mode, // 'subscription' => create subscription checkout
+      price_id, // optional override; falls back to env
+      email, // optional prefill for subscription
+      telegramId, // from Signals form
 
       // ONE-TIME path
-      product_id,           // required for one-time purchase
+      product_id, // required for one-time purchase
       quantity = 1,
       user_id = null,
 
-      // 🔥 NEW: track who referred this customer
+      // track who referred this customer
       affiliate_code = null,
     } = req.body || {};
 
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
     // -------------------------
     // 1) SUBSCRIPTION CHECKOUT
     // -------------------------
-    if (mode === 'subscription') {
+    if (mode === "subscription") {
       const activePrice = price_id || process.env.NEXT_PUBLIC_STRIPE_PRICE_ID;
       if (!activePrice) {
         return res.status(400).json({
-          error: 'Missing price_id. Set NEXT_PUBLIC_STRIPE_PRICE_ID or pass price_id in body.',
+          error: "Missing price_id. Set NEXT_PUBLIC_STRIPE_PRICE_ID or pass price_id in body.",
         });
       }
 
       const session = await stripe.checkout.sessions.create({
-        mode: 'subscription',
+        mode: "subscription",
         line_items: [{ price: activePrice, quantity: 1 }],
         allow_promotion_codes: true,
         customer_email: email || undefined,
-        success_url:
-          success_url ||
-          `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url:
-          cancel_url ||
-          `${baseUrl}/checkout/cancelled`,
-        customer_creation: 'always', // ensures we have a Customer to store metadata on
+        success_url: success_url || `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: cancel_url || `${baseUrl}/checkout/cancelled`,
+        customer_creation: "always", // ensures we have a Customer to store metadata on
 
         // put telegramId everywhere we might read it later
         metadata: {
-          telegramId: telegramId ? String(telegramId) : '',
-          plan: 'Basic Signals',
-          division: 'capital',
-          affiliate_code: affiliate_code || '',    // NEW
+          telegramId: telegramId ? String(telegramId) : "",
+          plan: "Basic Signals",
+          division: "capital",
+          affiliate_code: affiliate_code || "",
         },
         subscription_data: {
           metadata: {
-            telegramId: telegramId ? String(telegramId) : '',
-            plan: 'Basic Signals',
-            division: 'capital',
-            affiliate_code: affiliate_code || '',  // NEW
+            telegramId: telegramId ? String(telegramId) : "",
+            plan: "Basic Signals",
+            division: "capital",
+            affiliate_code: affiliate_code || "",
           },
         },
       });
@@ -83,8 +117,7 @@ export default async function handler(req, res) {
     // --------------------------------
     if (!product_id) {
       return res.status(400).json({
-        error:
-          'product_id is required for one-time checkout (or set mode: "subscription")',
+        error: 'product_id is required for one-time checkout (or set mode: "subscription")',
       });
     }
 
@@ -92,86 +125,132 @@ export default async function handler(req, res) {
 
     // Load product from Supabase
     const { data: product, error: pErr } = await supabaseAdmin
-      .from('products')
-      .select('*')
-      .eq('id', product_id)
+      .from("products")
+      .select("*")
+      .eq("id", product_id)
       .maybeSingle();
 
     if (pErr) throw pErr;
-    if (!product) return res.status(404).json({ error: 'Product not found' });
+    if (!product) return res.status(404).json({ error: "Product not found" });
 
-    const meta = product.metadata || {};
+    const meta = safeJSON(product.metadata);
     const stripePriceId = meta.stripe_price_id;
+
     if (!stripePriceId) {
-      return res
-        .status(400)
-        .json({ error: 'Missing metadata.stripe_price_id on this product' });
+      return res.status(400).json({ error: "Missing metadata.stripe_price_id on this product" });
     }
 
     // Decide if we must collect shipping (for merch/physical items)
     const needsShipping =
       !!meta.printful_sync_variant_id || meta.fulfill_with_printful === true;
 
+    // ✅ NEW: Studio Access lane (Option A)
+    // If product.metadata.kind === "studio_access", require login and attach entitlement metadata
+    const kind = asStr(meta.kind).trim().toLowerCase();
+    const isStudioAccess = kind === "studio_access";
+
+    // Determine user_id:
+    // - for normal products: keep your existing behavior (use body user_id if provided)
+    // - for studio_access: require Supabase login (Bearer token)
+    let resolvedUserId = user_id;
+
+    if (isStudioAccess) {
+      const { userId } = await getAuthedUserIdFromBearer(req);
+      if (!userId) {
+        return res.status(401).json({
+          error: "Studio access requires login. Missing or invalid Authorization Bearer token.",
+        });
+      }
+      resolvedUserId = userId;
+    }
+
+    // Studio metadata validation (only for studio_access)
+    let studioUniverseId = null;
+    let studioTier = "";
+    if (isStudioAccess) {
+      studioUniverseId = asStr(meta.universe_id).trim();
+      studioTier = normalizeStudioTier(meta.tier);
+
+      if (!studioUniverseId) {
+        return res.status(400).json({
+          error: "Studio access product is missing metadata.universe_id",
+        });
+      }
+      if (!studioTier) {
+        return res.status(400).json({
+          error: "Studio access product has invalid metadata.tier (must be priority|producer|packaging)",
+        });
+      }
+    }
+
     // build Checkout Session
     const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      line_items: [{ price: stripePriceId, quantity: qty }],
+      mode: "payment",
+      line_items: [{ price: stripePriceId, quantity: isStudioAccess ? 1 : qty }],
       allow_promotion_codes: true,
       automatic_tax: { enabled: true },
+
+      // ✅ Shipping ONLY for physical merch
       shipping_address_collection: needsShipping
         ? {
-            allowed_countries: [
-              'US',
-              'CA',
-              'GB',
-              'AU',
-              'NZ',
-              'DE',
-              'FR',
-              'ES',
-              'IT',
-              'NL',
-              'SE',
-            ],
+            allowed_countries: ["US", "CA", "GB", "AU", "NZ", "DE", "FR", "ES", "IT", "NL", "SE"],
           }
         : undefined,
-      phone_number_collection: needsShipping
-        ? { enabled: true }
-        : undefined,
+      phone_number_collection: needsShipping ? { enabled: true } : undefined,
+
+      // ✅ Studio: use studio-success by default (you can override by passing success_url)
       success_url:
         success_url ||
-        `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+        (isStudioAccess
+          ? `${baseUrl}/checkout/studio-success?session_id={CHECKOUT_SESSION_ID}`
+          : `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`),
+
       cancel_url:
         cancel_url ||
-        `${baseUrl}/checkout/cancelled`,
+        (isStudioAccess
+          ? `${baseUrl}/studios/${asStr(meta.universe_slug || "")}`.replace(/\/$/, "") || `${baseUrl}/studios`
+          : `${baseUrl}/checkout/cancelled`),
+
       metadata: {
+        // existing fields
         product_id: String(product.id),
-        division: String(product.division || 'site'),
-        quantity: String(qty),
-        product_name: String(product.name || ''),
-        affiliate_code: affiliate_code || '',   // 🔥 NEW
+        division: String(product.division || "site"),
+        quantity: String(isStudioAccess ? 1 : qty),
+        product_name: String(product.name || ""),
+        affiliate_code: affiliate_code || "",
+
+        // ✅ NEW: studio entitlement fields (only populated when studio_access)
+        type: isStudioAccess ? "studio_access" : "",
+        universe_id: isStudioAccess ? String(studioUniverseId) : "",
+        tier: isStudioAccess ? String(studioTier) : "",
+        user_id: isStudioAccess ? String(resolvedUserId || "") : "",
       },
     });
 
     // Record a pending order for your webhook to finalize
-    const estimatedTotal = Number(product.price || 0) * qty;
+    const estimatedTotal = Number(product.price || 0) * (isStudioAccess ? 1 : qty);
 
-    await supabaseAdmin.from('orders').insert({
-      user_id,
+    await supabaseAdmin.from("orders").insert({
+      user_id: resolvedUserId,
       product_id: product.id,
-      division: product.division || 'site',
-      status: 'pending',
-      quantity: qty,
+      division: product.division || "site",
+      status: "pending",
+      quantity: isStudioAccess ? 1 : qty,
       total_amount: estimatedTotal,
       stripe_session_id: session.id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      affiliate_code: affiliate_code || null, // 🔥 store ref so admin can see who drove it
+      affiliate_code: affiliate_code || null,
       product_snapshot: {
         name: product.name,
         price: product.price,
         thumbnail_url: product.thumbnail_url || null,
         metadata: meta || {},
+
+        // ✅ extra trace info for studio purchases
+        kind: isStudioAccess ? "studio_access" : kind || null,
+        universe_id: isStudioAccess ? studioUniverseId : null,
+        tier: isStudioAccess ? studioTier : null,
       },
     });
 
@@ -181,7 +260,7 @@ export default async function handler(req, res) {
       url: session.url,
     });
   } catch (err) {
-    console.error('create-session error:', err);
-    return res.status(500).json({ error: err.message || 'Internal error' });
+    console.error("create-session error:", err);
+    return res.status(500).json({ error: err.message || "Internal error" });
   }
 }

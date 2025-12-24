@@ -1,4 +1,3 @@
-// pages/studios/[slug].js
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -7,12 +6,10 @@ import Hero from "@/components/Hero";
 import Card from "@/components/Card";
 import SectionIntro from "@/components/SectionIntro";
 import { supabase } from "@/lib/supabase";
-
 /* ------------------------------
    Shared helpers (aligned with /pages/media.js)
 --------------------------------*/
 const asStr = (v) => (v === null || v === undefined ? "" : String(v));
-
 function safeMeta(meta) {
   if (!meta) return {};
   if (typeof meta === "object") return meta;
@@ -26,12 +23,10 @@ function safeMeta(meta) {
   }
   return {};
 }
-
 function isDirectAudio(url) {
   const u = (url || "").toLowerCase().split("?")[0];
   return u.endsWith(".mp3") || u.endsWith(".wav") || u.endsWith(".m4a") || u.endsWith(".ogg");
 }
-
 function inferPlatform(url) {
   if (!url) return "";
   const u = url.toLowerCase();
@@ -45,23 +40,18 @@ function inferPlatform(url) {
   if (u.includes("suno")) return "Suno";
   return "";
 }
-
 function normalizeType(t) {
   const v = (t || "").toLowerCase().trim();
-
   // legacy mappings
   if (v === "music" || v === "track") return "soundtrack";
   if (v === "chapter preview" || v === "chapter") return "chapter_read";
-
   // MediaTab types
   if (v === "opening_theme") return "soundtrack";
   if (v === "ending_theme") return "soundtrack";
   if (v === "character_theme") return "soundtrack";
   if (v === "battle_theme") return "score";
-
   return v || "other";
 }
-
 function prettyType(t) {
   const v = normalizeType(t);
   const map = {
@@ -81,7 +71,6 @@ function prettyType(t) {
   };
   return map[v] || "Media";
 }
-
 function primaryCta(item) {
   const t = normalizeType(item.media_type);
   if (t === "soundtrack" || t === "score" || t === "chapter_read" || t === "audiobook") return "Play";
@@ -89,13 +78,11 @@ function primaryCta(item) {
   if (t === "playlist") return "Open Playlist";
   return "View";
 }
-
 function clamp(s, n = 140) {
   const str = asStr(s);
   if (str.length <= n) return str;
   return str.slice(0, n - 1) + "…";
 }
-
 function pickCardImage(post, meta) {
   return (
     meta?.thumbnail_url ||
@@ -106,19 +93,16 @@ function pickCardImage(post, meta) {
     "/placeholder.png"
   );
 }
-
 function bestUrl(meta, post) {
   const audio = asStr(meta?.audio_url).trim();
   const media = asStr(meta?.media_url).trim();
   const audio2 = asStr(post?.audio_url).trim();
   const media2 = asStr(post?.media_url).trim();
-
   return {
     audio_url: audio || audio2 || "",
     media_url: media || media2 || "",
   };
 }
-
 function pickIp(meta) {
   return (
     asStr(meta?.book).trim() ||
@@ -129,7 +113,6 @@ function pickIp(meta) {
     ""
   );
 }
-
 /* ------------------------------
    Small helpers
 --------------------------------*/
@@ -137,7 +120,6 @@ function isYoutube(url = "") {
   const u = String(url || "");
   return u.includes("youtube.com") || u.includes("youtu.be");
 }
-
 function getYoutubeId(url = "") {
   const u = String(url || "");
   const youtuBe = u.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
@@ -148,7 +130,6 @@ function getYoutubeId(url = "") {
   if (embed?.[1]) return embed[1];
   return null;
 }
-
 function YoutubeEmbed({ url, title = "Video" }) {
   const id = getYoutubeId(url);
   if (!id) return null;
@@ -164,7 +145,6 @@ function YoutubeEmbed({ url, title = "Video" }) {
     </div>
   );
 }
-
 function SpotifyEmbed({ url, title = "Spotify" }) {
   if (!url || !String(url).includes("spotify.com")) return null;
   const embedUrl = String(url).replace("open.spotify.com/", "open.spotify.com/embed/");
@@ -181,7 +161,6 @@ function SpotifyEmbed({ url, title = "Spotify" }) {
     </div>
   );
 }
-
 function chip(text) {
   return (
     <span className="text-[11px] px-3 py-1 rounded-full bg-white/80 text-gray-800 border border-gray-200/70 dark:bg-gray-900/60 dark:text-gray-100 dark:border-gray-700">
@@ -189,11 +168,9 @@ function chip(text) {
     </span>
   );
 }
-
 function safeStr(v) {
   return String(v ?? "").trim();
 }
-
 function safeJson(v, fallback = {}) {
   try {
     if (!v) return fallback;
@@ -204,7 +181,6 @@ function safeJson(v, fallback = {}) {
     return fallback;
   }
 }
-
 function getAssetUrl(a) {
   return (
     a?.file_url ||
@@ -217,7 +193,6 @@ function getAssetUrl(a) {
     ""
   );
 }
-
 function getThumb(a) {
   return (
     a?.thumbnail_url ||
@@ -228,7 +203,6 @@ function getThumb(a) {
     ""
   );
 }
-
 function guessFileType(url = "") {
   const u = safeStr(url).toLowerCase();
   if (!u) return "";
@@ -244,12 +218,80 @@ function guessFileType(url = "") {
   if (q.endsWith(".png") || q.endsWith(".jpg") || q.endsWith(".jpeg") || q.endsWith(".webp")) return "image";
   return "";
 }
-
+/* ------------------------------
+   ✅ NEW: Attachments helpers (StudioPagesTab-compatible)
+   attachments live in studio_pages.metadata.attachments[]
+--------------------------------*/
+function guessAttachmentKind(url = "") {
+  const u = safeStr(url).toLowerCase();
+  if (!u) return "link";
+  if (u.includes("youtube.com") || u.includes("youtu.be") || u.includes("vimeo.com")) return "video";
+  if (u.includes("spotify.com") || u.includes("soundcloud.com") || isDirectAudio(u)) return "audio";
+  const ft = guessFileType(u);
+  if (ft === "image") return "image";
+  if (ft === "pdf") return "document";
+  if (["mp4", "webm", "mov"].includes(ft)) return "video";
+  if (["mp3", "wav", "m4a", "ogg"].includes(ft)) return "audio";
+  return "link";
+}
+function normalizeTags(input) {
+  if (Array.isArray(input)) return input.map((t) => safeStr(t)).filter(Boolean);
+  const s = safeStr(input);
+  if (!s) return [];
+  return s
+    .split(",")
+    .map((x) => safeStr(x))
+    .filter(Boolean);
+}
+function normalizeAttachment(a) {
+  const base = a && typeof a === "object" ? a : {};
+  const url = safeStr(base.url || base.file_url || base.external_url);
+  const thumb = safeStr(base.thumbnail_url || base.thumb_url || base.cover_url || base.image_url);
+  const kind = safeStr(base.kind) || guessAttachmentKind(url || thumb);
+  const media_type = safeStr(base.media_type) || "other";
+  const title = safeStr(base.title);
+  const notes = safeStr(base.notes);
+  const duration = safeStr(base.duration);
+  const bpm = base.bpm === null || base.bpm === undefined || base.bpm === "" ? null : Number(base.bpm);
+  const license_tier = safeStr(base.license_tier);
+  const tags = normalizeTags(base.tags || []);
+  return {
+    id: safeStr(base.id) || `att_${Math.random().toString(16).slice(2)}_${Date.now()}`,
+    kind,
+    media_type,
+    title,
+    url,
+    thumbnail_url: thumb,
+    tags,
+    duration,
+    bpm: Number.isFinite(bpm) ? bpm : null,
+    license_tier,
+    notes,
+  };
+}
+function getPageAttachments(page) {
+  const md = safeJson(page?.metadata, {});
+  const arr = Array.isArray(md?.attachments) ? md.attachments : [];
+  return arr.map(normalizeAttachment).filter((x) => x && (x.url || x.thumbnail_url));
+}
+function niceAttachmentTypeLabel(media_type = "") {
+  const t = safeStr(media_type).toLowerCase();
+  const m = {
+    poster: "Poster / Key Art",
+    lookbook: "Lookbook",
+    trailer: "Trailer",
+    theme: "Theme",
+    cue: "Cue",
+    stinger: "Stinger",
+    packet: "Packet",
+    other: "Attachment",
+  };
+  return m[t] || "Attachment";
+}
 // Minimal render (safe + paste-friendly). If you want full markdown later, swap to react-markdown.
 function renderPlainMarkdown(md = "") {
   const text = String(md || "");
   const lines = text.split("\n");
-
   return (
     <div className="space-y-2">
       {lines.map((line, i) => {
@@ -278,7 +320,44 @@ function renderPlainMarkdown(md = "") {
     </div>
   );
 }
-
+/* ------------------------------
+   UI building blocks (match your best sections)
+--------------------------------*/
+function HeaderCard({
+  kicker,
+  title,
+  subtitle,
+  rightChips = [],
+  align = "left",
+  className = "",
+  children,
+}) {
+  const center = align === "center";
+  return (
+    <div
+      className={[
+        "rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8",
+        className,
+      ].join(" ")}
+    >
+      <div className={`flex flex-wrap gap-3 items-start ${center ? "justify-center text-center" : "justify-between"}`}>
+        <div className={center ? "w-full" : ""}>
+          {kicker ? <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">{kicker}</div> : null}
+          {title ? <div className="text-xl md:text-2xl font-bold mt-1">{title}</div> : null}
+          {subtitle ? <div className="text-sm opacity-80 mt-2">{subtitle}</div> : null}
+        </div>
+        {rightChips?.length ? (
+          <div className={`flex flex-wrap gap-2 ${center ? "justify-center w-full" : "justify-end"}`}>
+            {rightChips.map((c) => (
+              <span key={c}>{chip(c)}</span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {children ? <div className="mt-5">{children}</div> : null}
+    </div>
+  );
+}
 function AudioCard({ a }) {
   const url = a?.audio_url || a?.media_url || getAssetUrl(a);
   const thumb = a?.card_img || getThumb(a);
@@ -286,10 +365,8 @@ function AudioCard({ a }) {
   const desc = a?.excerpt || a?.description || "";
   const kind = safeStr(a?.media_type || a?.metadata?.media_type || a?.metadata?.audio_kind || a?.asset_type || "audio");
   const fileType = guessFileType(url);
-
   const isSpotify = url.includes("spotify.com");
   const isYT = isYoutube(url);
-
   return (
     <div className="rounded-3xl overflow-hidden border border-gray-200/80 dark:border-gray-800 bg-white/85 dark:bg-gray-900/60 shadow-sm">
       {thumb ? (
@@ -297,7 +374,6 @@ function AudioCard({ a }) {
       ) : (
         <div className="w-full h-48 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800" />
       )}
-
       <div className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -309,13 +385,11 @@ function AudioCard({ a }) {
             <div className="text-lg font-semibold mt-1">{title}</div>
             {desc ? <div className="text-sm opacity-80 mt-2 whitespace-pre-wrap">{desc}</div> : null}
           </div>
-
           <div className="flex flex-col gap-2 items-end">
             {a?.duration ? chip(`${a.duration}`) : null}
             {a?.mood ? chip(`${a.mood}`) : null}
           </div>
         </div>
-
         <div className="mt-4">
           {isSpotify ? (
             <SpotifyEmbed url={url} title={title} />
@@ -326,7 +400,6 @@ function AudioCard({ a }) {
               <audio controls preload="none" className="w-full">
                 <source src={url} />
               </audio>
-
               <div className="mt-3 flex flex-wrap gap-2">
                 <a
                   href={url}
@@ -336,7 +409,6 @@ function AudioCard({ a }) {
                 >
                   Open {primaryCta({ media_type: kind })} →
                 </a>
-
                 {a?.download_url ? (
                   <a
                     href={a.download_url}
@@ -347,7 +419,6 @@ function AudioCard({ a }) {
                     Download →
                   </a>
                 ) : null}
-
                 {a?.license_url ? (
                   <a
                     href={a.license_url}
@@ -358,7 +429,6 @@ function AudioCard({ a }) {
                     Rights / License →
                   </a>
                 ) : null}
-
                 {a?.slug ? (
                   <Link
                     href={`/media/${a.slug}`}
@@ -373,7 +443,6 @@ function AudioCard({ a }) {
             <div className="text-sm opacity-70">No audio URL found on this item.</div>
           )}
         </div>
-
         {Array.isArray(a?.tags) && a.tags.length ? (
           <div className="mt-4 flex flex-wrap gap-2">
             {a.tags.slice(0, 8).map((t) => (
@@ -390,9 +459,440 @@ function AudioCard({ a }) {
     </div>
   );
 }
-
 /* ------------------------------
-   Studio package logic
+   ✅ NEW: Attachment renderer (per page)
+--------------------------------*/
+function AttachmentCard({ att }) {
+  const url = safeStr(att?.url);
+  const thumb = safeStr(att?.thumbnail_url);
+  const title = safeStr(att?.title) || "Attachment";
+  const kind = safeStr(att?.kind || "link");
+  const mediaTypeLabel = niceAttachmentTypeLabel(att?.media_type);
+  const platform = inferPlatform(url);
+  const ft = guessFileType(url);
+  const isSpotify = url.includes("spotify.com");
+  const isYT = isYoutube(url);
+  const isPdf = ft === "pdf";
+  const isImage = kind === "image" || ft === "image";
+  const isVideo = kind === "video" || ["mp4", "webm", "mov"].includes(ft) || isYT;
+  const isAudio = kind === "audio" || ["mp3", "wav", "m4a", "ogg"].includes(ft) || isSpotify || url.includes("soundcloud.com");
+  return (
+    <div className="rounded-3xl overflow-hidden border border-gray-200/80 dark:border-gray-800 bg-white/85 dark:bg-gray-900/60 shadow-sm">
+      {isImage && (thumb || url) ? (
+        <img src={thumb || url} alt={title} className="w-full h-52 object-cover" loading="lazy" />
+      ) : thumb ? (
+        <img src={thumb} alt={title} className="w-full h-52 object-cover" loading="lazy" />
+      ) : (
+        <div className="w-full h-52 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800" />
+      )}
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">
+              {mediaTypeLabel}
+              {kind ? ` • ${kind}` : ""}
+              {platform ? ` • ${platform}` : ""}
+              {ft && ft !== "image" ? ` • ${ft.toUpperCase()}` : ""}
+            </div>
+            <div className="text-lg font-semibold mt-1 truncate">{title}</div>
+            {(att?.duration || att?.bpm || att?.license_tier) ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {att?.duration ? chip(String(att.duration)) : null}
+                {att?.bpm ? chip(`${att.bpm} BPM`) : null}
+                {att?.license_tier ? chip(String(att.license_tier)) : null}
+              </div>
+            ) : null}
+            {att?.notes ? <div className="text-sm opacity-80 mt-3 whitespace-pre-wrap">{att.notes}</div> : null}
+          </div>
+        </div>
+        <div className="mt-4">
+          {isSpotify ? (
+            <SpotifyEmbed url={url} title={title} />
+          ) : isYT ? (
+            <YoutubeEmbed url={url} title={title} />
+          ) : isAudio && url ? (
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/30 p-4">
+              <audio controls preload="none" className="w-full">
+                <source src={url} />
+              </audio>
+            </div>
+          ) : isVideo && url ? (
+            <div className="rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-black">
+              <video src={url} controls playsInline className="w-full h-[360px] object-cover bg-black" />
+            </div>
+          ) : isPdf && url ? (
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/30 p-4">
+              <div className="text-sm opacity-80">PDF ready. Open inline (new tab) or download from the source.</div>
+            </div>
+          ) : null}
+        </div>
+        {Array.isArray(att?.tags) && att.tags.length ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {att.tags.slice(0, 8).map((t) => (
+              <span
+                key={t}
+                className="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              >
+                {String(t)}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-semibold"
+            >
+              Open →
+            </a>
+          ) : null}
+          {thumb ? (
+            <a
+              href={thumb}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40 text-sm"
+            >
+              Thumb →
+            </a>
+          ) : null}
+          {isPdf && url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100 text-sm font-semibold"
+            >
+              Open PDF →
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+function PageAttachmentsRail({ page }) {
+  const attachments = useMemo(() => getPageAttachments(page), [page]);
+  if (!attachments.length) return null;
+  const counts = attachments.reduce(
+    (acc, a) => {
+      const k = safeStr(a.kind || "link");
+      acc[k] = (acc[k] || 0) + 1;
+      return acc;
+    },
+    { image: 0, video: 0, audio: 0, document: 0, link: 0 }
+  );
+  return (
+    <div className="mt-8">
+      <HeaderCard
+        kicker="Attachments"
+        title="Media Rail"
+        subtitle="Optional assets attached to this page (stored in studio_pages.metadata.attachments)."
+        rightChips={[
+          `${attachments.length} total`,
+          counts.image ? `i${counts.image}` : null,
+          counts.video ? `v${counts.video}` : null,
+          counts.audio ? `a${counts.audio}` : null,
+          counts.document ? `d${counts.document}` : null,
+        ].filter(Boolean)}
+        align="left"
+        className="mb-5"
+      />
+      {attachments.length === 1 ? (
+        <div className="flex justify-center">
+          <div className="w-full max-w-3xl">
+            <AttachmentCard att={attachments[0]} />
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {attachments.map((att) => (
+            <AttachmentCard key={att.id} att={att} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+/* ------------------------------
+   ✅ NEW: Sellable packages / access tiers
+   - page metadata can include:
+     metadata.access_tier = public | priority | producer | packaging
+     metadata.visibility = public | vault (your existing)
+   - without Stripe/auth, we simulate viewer access with query param:
+     ?tier=public|priority|producer|packaging
+     and keep your existing ?vault=1 toggle for vault visibility
+--------------------------------*/
+const ACCESS_TIERS = ["public", "priority", "producer", "packaging"];
+function normalizeTier(t) {
+  const v = safeStr(t).toLowerCase();
+  if (ACCESS_TIERS.includes(v)) return v;
+  return "public";
+}
+const TIER_RANK = { public: 0, priority: 1, producer: 2, packaging: 3 };
+function canViewTier(viewerTier, pageTier) {
+  const vt = TIER_RANK[normalizeTier(viewerTier)] ?? 0;
+  const pt = TIER_RANK[normalizeTier(pageTier)] ?? 0;
+  return vt >= pt;
+}
+// Fallback mapping by page_type if metadata.access_tier is not set
+const PAGE_TYPE_DEFAULT_TIER = {
+  // public storefront
+  logline: "public",
+  pitch_1p: "public",
+  synopsis_1page: "public",
+  comparable_titles: "public",
+  format_rating_audience: "public",
+  one_sheet: "public",
+  // priority window
+  beat_sheet: "priority",
+  season1_outline: "priority",
+  episode_list: "priority",
+  pilot_outline: "priority",
+  signature_scene_clip: "priority",
+  teaser_trailer: "priority",
+  themes_main_hero_villain: "priority",
+  trailer_cue_stingers: "priority",
+  // producer packet
+  series_bible: "producer",
+  world_rules_factions: "producer",
+  timeline: "producer",
+  glossary: "producer",
+  cast_profiles_arcs: "producer",
+  lookbook_pdf: "producer",
+  poster_key_art: "producer",
+  trailer_storyboard: "producer",
+  franchise_roadmap: "producer",
+  pilot_script_or_treatment: "producer",
+  // packaging track / deal room
+  chain_of_title_rights_matrix: "packaging",
+  option_term_sheet_producer_packet: "packaging",
+  negotiation: "packaging",
+};
+function getPageVisibility(p) {
+  const md = safeJson(p?.metadata, {});
+  const v = String(md?.visibility || "public").toLowerCase();
+  return v === "vault" ? "vault" : "public";
+}
+function getPageAccessTier(p) {
+  const md = safeJson(p?.metadata, {});
+  const explicit = normalizeTier(md?.access_tier);
+  if (md?.access_tier) return explicit;
+  // if you mark as vault but forget access_tier, default to packaging (deal room)
+  if (getPageVisibility(p) === "vault") return "packaging";
+  const t = safeStr(p?.page_type);
+  return normalizeTier(PAGE_TYPE_DEFAULT_TIER[t] || "public");
+}
+function tierLabel(t) {
+  const v = normalizeTier(t);
+  const map = {
+    public: "Public",
+    priority: "Priority Window",
+    producer: "Producer Packet",
+    packaging: "Packaging / Option Track",
+  };
+  return map[v] || "Public";
+}
+function tierBadge(t) {
+  const v = normalizeTier(t);
+  const map = {
+    public:
+      "text-[10px] px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-900/40",
+    priority:
+      "text-[10px] px-2 py-0.5 rounded-full border border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100 dark:border-amber-900/40",
+    producer:
+      "text-[10px] px-2 py-0.5 rounded-full border border-sky-300 bg-sky-50 text-sky-900 dark:bg-sky-950/20 dark:text-sky-100 dark:border-sky-900/40",
+    packaging:
+      "text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700",
+  };
+  return map[v] || map.public;
+}
+function niceTypeLabel(t = "") {
+  const m = {
+    pitch_1p: "Pitch (1 Page)",
+    synopsis_1page: "Synopsis (1 Page)",
+    comparable_titles: "Comparable Titles",
+    format_rating_audience: "Format / Rating / Audience",
+    season1_outline: "Season 1 Outline",
+    episode_list: "Episode List",
+    pilot_outline: "Pilot Outline",
+    pilot_script_or_treatment: "Pilot Script / Treatment",
+    world_rules_factions: "World Rules + Factions",
+    cast_profiles_arcs: "Cast Profiles + Arcs",
+    lookbook_pdf: "Lookbook",
+    poster_key_art: "Poster / Key Art",
+    trailer_storyboard: "Trailer Storyboard",
+    teaser_trailer: "Teaser Trailer",
+    signature_scene_clip: "Signature Scene Clip",
+    themes_main_hero_villain: "Themes (Main / Hero / Villain)",
+    trailer_cue_stingers: "Trailer Cues + Stingers",
+    chain_of_title_rights_matrix: "Chain of Title + Rights Matrix",
+    option_term_sheet_producer_packet: "Option Term Sheet + Producer Packet",
+  };
+  return m[t] || String(t).replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+function buildCheckoutHref(universe, tier) {
+  // ✅ drop-in wiring:
+  // replace with your real Stripe checkout route when ready:
+  // e.g. `/api/stripe/checkout?tier=${tier}&universe_id=${universe.id}`
+  const u = universe?.slug ? `/studios/${universe.slug}` : "/studios";
+  return `${u}?tier=${encodeURIComponent(tier)}`;
+}
+function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, children }) {
+  const allowed = canViewTier(viewerTier, requiredTier);
+  if (allowed) {
+    return children || null;
+  }
+  return (
+    <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/75 dark:bg-gray-900/55 shadow-sm p-6 md:p-8">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Access required</div>
+          <div className="text-2xl font-bold mt-2">{title}</div>
+          <div className="text-sm opacity-80 mt-2">{subtitle}</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className={tierBadge(requiredTier)}>{tierLabel(requiredTier)}</span>
+            <span className={tierBadge(viewerTier)}>Viewing: {tierLabel(viewerTier)}</span>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 min-w-[240px]">
+          <button
+            onClick={() => startStudioCheckout(requiredTier)}
+            className="px-5 py-3 rounded-2xl bg-black text-white dark:bg-white dark:text-black font-semibold text-center"
+          >
+            Unlock {tierLabel(requiredTier)} →
+          </button>
+          <div className="text-xs opacity-70 text-center">
+            (Currently simulated via <code>?tier=</code> until Stripe is wired.)
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+function PackagesBar({ universe, viewerTier, showVault }) {
+  const tiers = [
+    {
+      key: "priority",
+      title: "Priority Window",
+      price: "$2,500",
+      duration: "45 days",
+      bullets: ["Serious evaluation", "Beats + season map", "Full trailer + themes"],
+    },
+    {
+      key: "producer",
+      title: "Producer Packet",
+      price: "$10,000",
+      duration: "90 days",
+      bullets: ["Bible + world rules", "Lookbook + deck copy", "Shareable packet PDFs"],
+    },
+    {
+      key: "packaging",
+      title: "Packaging Track",
+      price: "$35,000",
+      duration: "12 months",
+      bullets: ["Deal room access", "Rights matrix", "Option docs"],
+    },
+  ];
+  return (
+    <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Packages</div>
+          <div className="text-2xl font-bold mt-2">Choose access level</div>
+          <div className="text-sm opacity-80 mt-2">
+            Your studio pages can be organized into sellable tiers using{" "}
+            <code>studio_pages.metadata.access_tier</code>. (Vault pages remain hidden unless <code>?vault=1</code>.)
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className={tierBadge(viewerTier)}>Viewing: {tierLabel(viewerTier)}</span>
+            {showVault ? chip("Vault: ON") : chip("Vault: OFF")}
+          </div>
+        </div>
+        <div className="flex gap-2 flex-wrap justify-end">
+          <Link
+            href={universe?.slug ? `/studios/${universe.slug}?tier=public${showVault ? "&vault=1" : ""}` : "#"}
+            className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40 text-sm font-semibold"
+          >
+            Public
+          </Link>
+          <Link
+            href={universe?.slug ? `/studios/${universe.slug}?tier=priority${showVault ? "&vault=1" : ""}` : "#"}
+            className="px-4 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100 text-sm font-semibold"
+          >
+            Priority
+          </Link>
+          <Link
+            href={universe?.slug ? `/studios/${universe.slug}?tier=producer${showVault ? "&vault=1" : ""}` : "#"}
+            className="px-4 py-2 rounded-xl border border-sky-300 bg-sky-50 text-sky-900 dark:bg-sky-950/20 dark:text-sky-100 text-sm font-semibold"
+          >
+            Producer
+          </Link>
+          <Link
+            href={universe?.slug ? `/studios/${universe.slug}?tier=packaging${showVault ? "&vault=1" : ""}` : "#"}
+            className="px-4 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 text-sm font-semibold"
+          >
+            Packaging
+          </Link>
+        </div>
+      </div>
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+        {tiers.map((t) => {
+          const active = normalizeTier(viewerTier) === t.key;
+          return (
+            <div
+              key={t.key}
+              className={[
+                "rounded-3xl border shadow-sm p-5",
+                active
+                  ? "border-amber-400/70 bg-amber-50/70 dark:bg-amber-950/10"
+                  : "border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/20",
+              ].join(" ")}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">{t.duration}</div>
+                  <div className="text-lg font-bold mt-1">{t.title}</div>
+                </div>
+                <div className="text-sm font-semibold">{t.price}</div>
+              </div>
+              <ul className="mt-3 space-y-2 text-sm opacity-90">
+                {t.bullets.map((b) => (
+                  <li key={b} className="flex gap-2">
+                    <span className="mt-[2px]">•</span>
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => startStudioCheckout(t.key)}
+                  className="flex-1 px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-semibold text-center"
+                >
+                  Unlock →
+                </button>
+                <Link
+                  href={universe?.slug ? `/studios/${universe.slug}?tier=${t.key}${showVault ? "&vault=1" : ""}#package` : "#"}
+                  className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40 text-sm font-semibold"
+                >
+                  Preview
+                </Link>
+              </div>
+              <div className="mt-3 text-xs opacity-70">
+                Tip: set <code>metadata.access_tier</code> on pages to control what this tier unlocks.
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+/* ------------------------------
+   Studio package logic (your existing groups)
 --------------------------------*/
 const REQUIRED_25_PAGE_TYPES = [
   "logline",
@@ -421,13 +921,13 @@ const REQUIRED_25_PAGE_TYPES = [
   "chain_of_title_rights_matrix",
   "option_term_sheet_producer_packet",
 ];
-
 const EXEC_GROUPS = [
   {
     key: "executive",
     title: "Executive Read",
     kicker: "Studio Package",
     lead: "Fast producer scan — positioning, format, comps, and the clean pitch.",
+    chips: ["Fast scan", "Optionable structure", "Shareable sections"],
     types: new Set(["logline", "pitch_1p", "synopsis_1page", "comparable_titles", "format_rating_audience", "one_sheet"]),
   },
   {
@@ -435,6 +935,7 @@ const EXEC_GROUPS = [
     title: "Story Proof",
     kicker: "Story",
     lead: "Season structure, beats, pilot direction — enough to greenlight a conversation.",
+    chips: ["Beats + arcs", "Pilot-ready", "Season map"],
     types: new Set(["beat_sheet", "season1_outline", "episode_list", "pilot_outline", "pilot_script_or_treatment", "series_bible"]),
   },
   {
@@ -442,6 +943,7 @@ const EXEC_GROUPS = [
     title: "World & Cast",
     kicker: "Lore",
     lead: "Rules, factions, timeline, glossary, and cast arcs — continuity that scales.",
+    chips: ["Rules", "Factions", "Continuity"],
     types: new Set(["world_rules_factions", "timeline", "glossary", "cast_profiles_arcs"]),
   },
   {
@@ -449,6 +951,7 @@ const EXEC_GROUPS = [
     title: "Visual & Marketing",
     kicker: "Look",
     lead: "Lookbook, poster, trailer storyboard, teasers, signature scene assets.",
+    chips: ["Lookbook", "Poster", "Trailer kit"],
     types: new Set(["lookbook_pdf", "poster_key_art", "trailer_storyboard", "teaser_trailer", "signature_scene_clip"]),
   },
   {
@@ -456,6 +959,7 @@ const EXEC_GROUPS = [
     title: "Themes & Trailer Sound",
     kicker: "Sound",
     lead: "Motifs and cues that lock tone immediately.",
+    chips: ["Motif-driven", "Trailer-ready", "Tone lock"],
     types: new Set(["themes_main_hero_villain", "trailer_cue_stingers"]),
   },
   {
@@ -463,57 +967,25 @@ const EXEC_GROUPS = [
     title: "Deal Room",
     kicker: "Vault",
     lead: "Rights + deal docs. Hidden by default — use ?vault=1.",
+    chips: ["Rights", "Deal docs", "Partner-ready"],
     types: new Set(["chain_of_title_rights_matrix", "option_term_sheet_producer_packet", "negotiation", "press_kit", "roadmap", "prompts", "deck_copy"]),
   },
 ];
-
-function getPageVisibility(p) {
-  const md = safeJson(p?.metadata, {});
-  const v = String(md?.visibility || "public").toLowerCase();
-  return v === "vault" ? "vault" : "public";
-}
-
-function niceTypeLabel(t = "") {
-  const m = {
-    pitch_1p: "Pitch (1 Page)",
-    synopsis_1page: "Synopsis (1 Page)",
-    comparable_titles: "Comparable Titles",
-    format_rating_audience: "Format / Rating / Audience",
-    season1_outline: "Season 1 Outline",
-    episode_list: "Episode List",
-    pilot_outline: "Pilot Outline",
-    pilot_script_or_treatment: "Pilot Script / Treatment",
-    world_rules_factions: "World Rules + Factions",
-    cast_profiles_arcs: "Cast Profiles + Arcs",
-    lookbook_pdf: "Lookbook",
-    poster_key_art: "Poster / Key Art",
-    trailer_storyboard: "Trailer Storyboard",
-    teaser_trailer: "Teaser Trailer",
-    signature_scene_clip: "Signature Scene Clip",
-    themes_main_hero_villain: "Themes (Main / Hero / Villain)",
-    trailer_cue_stingers: "Trailer Cues + Stingers",
-    chain_of_title_rights_matrix: "Chain of Title + Rights Matrix",
-    option_term_sheet_producer_packet: "Option Term Sheet + Producer Packet",
-  };
-  return m[t] || String(t).replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function packageProgress(pages = []) {
   const present = new Set(pages.map((p) => safeStr(p.page_type)).filter(Boolean));
   const have = REQUIRED_25_PAGE_TYPES.filter((t) => present.has(t));
   return { count: have.length, total: REQUIRED_25_PAGE_TYPES.length };
 }
-
-function groupStudioPages(pages = [], showVault = false) {
+function groupStudioPages(pages = [], showVault = false, viewerTier = "public") {
   const visible = pages.filter((p) => {
     const vis = getPageVisibility(p);
     if (vis === "vault" && !showVault) return false;
+    const pageTier = getPageAccessTier(p);
+    if (!canViewTier(viewerTier, pageTier)) return false;
     return true;
   });
-
   const buckets = EXEC_GROUPS.map((g) => ({ ...g, pages: [] }));
   const used = new Set();
-
   visible.forEach((p) => {
     const t = safeStr(p.page_type);
     const g = buckets.find((x) => x.types.has(t));
@@ -522,7 +994,6 @@ function groupStudioPages(pages = [], showVault = false) {
       used.add(p.id);
     }
   });
-
   // Anything else → executive package “Appendix”
   const appendix = visible.filter((p) => !used.has(p.id));
   if (appendix.length) {
@@ -530,12 +1001,12 @@ function groupStudioPages(pages = [], showVault = false) {
       key: "appendix",
       title: "Appendix",
       kicker: "Extras",
-      lead: "Additional materials you’ve published for this universe.",
+      lead: "Additional published materials (notes, extras, variants).",
+      chips: ["Extra pages", "Deep dives", "Variants"],
       types: new Set(),
       pages: appendix,
     });
   }
-
   // Sort within each group by sort_order then updated_at
   buckets.forEach((b) => {
     b.pages.sort((a, c) => {
@@ -547,14 +1018,175 @@ function groupStudioPages(pages = [], showVault = false) {
       return cd - ad;
     });
   });
-
   return buckets.filter((b) => b.pages.length > 0);
 }
-
+/* ------------------------------
+   ✅ NEW: Locked sections preview list (titles only)
+   - Shows pages that are NOT visible at current tier (and/or hidden vault)
+   - No content_md is displayed, only titles + labels
+--------------------------------*/
+function LockedSectionsPreview({ universe, pages = [], viewerTier = "public", showVault = false }) {
+  const locked = useMemo(() => {
+    const lockedByTier = [];
+    const lockedByVault = [];
+    (pages || []).forEach((p) => {
+      // only consider published pages (you already query published, but safe)
+      const status = safeStr(p?.status).toLowerCase();
+      if (status && status !== "published") return;
+      const vis = getPageVisibility(p); // public | vault
+      const requiredTier = getPageAccessTier(p);
+      // Vault-hidden pages
+      if (vis === "vault" && !showVault) {
+        lockedByVault.push({ p, requiredTier, vis });
+        return;
+      }
+      // Tier-locked pages
+      if (!canViewTier(viewerTier, requiredTier)) {
+        lockedByTier.push({ p, requiredTier, vis });
+        return;
+      }
+    });
+    // sort: higher tiers first, then by sort_order, then updated_at
+    const sortFn = (a, b) => {
+      const ar = TIER_RANK[normalizeTier(a.requiredTier)] ?? 0;
+      const br = TIER_RANK[normalizeTier(b.requiredTier)] ?? 0;
+      if (br !== ar) return br - ar;
+      const ao = Number(a.p?.sort_order ?? 9999);
+      const bo = Number(b.p?.sort_order ?? 9999);
+      if (ao !== bo) return ao - bo;
+      const ad = new Date(a.p?.updated_at || 0).getTime();
+      const bd = new Date(b.p?.updated_at || 0).getTime();
+      return bd - ad;
+    };
+    lockedByTier.sort(sortFn);
+    lockedByVault.sort(sortFn);
+    return { lockedByTier, lockedByVault };
+  }, [pages, viewerTier, showVault]);
+  const totalLocked = (locked.lockedByTier?.length || 0) + (locked.lockedByVault?.length || 0);
+  if (!totalLocked) return null;
+  return (
+    <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8 mb-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Locked sections preview</div>
+          <div className="text-2xl font-bold mt-2">What you unlock</div>
+          <div className="text-sm opacity-80 mt-2">
+            Titles only — content stays locked until purchase / access tier is granted.
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className={tierBadge(viewerTier)}>Viewing: {tierLabel(viewerTier)}</span>
+            {locked.lockedByTier.length ? chip(`${locked.lockedByTier.length} tier-locked`) : null}
+            {locked.lockedByVault.length ? chip(`${locked.lockedByVault.length} vault-hidden`) : null}
+          </div>
+        </div>
+        <div className="min-w-[240px]">
+          <div className="rounded-2xl bg-black text-white dark:bg-white dark:text-black p-4">
+            <div className="text-sm font-semibold">Unlock access</div>
+            <div className="text-xs opacity-80 mt-1">
+              Upgrade tier above to preview locked sections.
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href={universe?.slug ? `/studios/${universe.slug}?tier=priority${showVault ? "&vault=1" : ""}#package` : "#"}
+                className="px-3 py-2 rounded-xl bg-white/10 dark:bg-black/10 border border-white/20 dark:border-black/20 text-xs font-semibold"
+              >
+                Priority →
+              </Link>
+              <Link
+                href={universe?.slug ? `/studios/${universe.slug}?tier=producer${showVault ? "&vault=1" : ""}#package` : "#"}
+                className="px-3 py-2 rounded-xl bg-white/10 dark:bg-black/10 border border-white/20 dark:border-black/20 text-xs font-semibold"
+              >
+                Producer →
+              </Link>
+              <Link
+                href={universe?.slug ? `/studios/${universe.slug}?tier=packaging${showVault ? "&vault=1" : ""}#package` : "#"}
+                className="px-3 py-2 rounded-xl bg-white/10 dark:bg-black/10 border border-white/20 dark:border-black/20 text-xs font-semibold"
+              >
+                Packaging →
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* Tier-locked */}
+      {locked.lockedByTier.length ? (
+        <div className="mt-6">
+          <div className="text-sm font-semibold mb-3">Tier-locked pages</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {locked.lockedByTier.slice(0, 24).map(({ p, requiredTier, vis }) => {
+              const tag = niceTypeLabel(p.page_type);
+              const title = safeStr(p.title) || tag;
+              return (
+                <div
+                  key={p.id}
+                  className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold truncate">{title}</div>
+                      <div className="text-xs opacity-70 mt-1">{tag}</div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <span className={tierBadge(requiredTier)}>{tierLabel(requiredTier)}</span>
+                      {vis === "vault" ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
+                          vault
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {locked.lockedByTier.length > 24 ? (
+            <div className="text-xs opacity-60 mt-3">
+              Showing 24 of {locked.lockedByTier.length}. (Add more tiers or refine page types if needed.)
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {/* Vault-hidden */}
+      {locked.lockedByVault.length ? (
+        <div className="mt-8">
+          <div className="text-sm font-semibold mb-3">Vault-hidden pages</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {locked.lockedByVault.slice(0, 24).map(({ p, requiredTier }) => {
+              const tag = niceTypeLabel(p.page_type);
+              const title = safeStr(p.title) || tag;
+              return (
+                <div
+                  key={p.id}
+                  className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold truncate">{title}</div>
+                      <div className="text-xs opacity-70 mt-1">{tag}</div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <span className={tierBadge(requiredTier)}>{tierLabel(requiredTier)}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
+                        vault
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {locked.lockedByVault.length > 24 ? (
+            <div className="text-xs opacity-60 mt-3">
+              Showing 24 of {locked.lockedByVault.length}. (Toggle <code>?vault=1</code> to reveal vault pages.)
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 /* ------------------------------
    Media (same source as /media.js)
-   - pulls from /api/posts?division=media
-   - filters by IP match to this universe
 --------------------------------*/
 function normalizeApiList(json) {
   if (Array.isArray(json)) return json;
@@ -564,7 +1196,6 @@ function normalizeApiList(json) {
   if (json && Array.isArray(json.items)) return json.items;
   return [];
 }
-
 function normalizeMediaPosts(raw) {
   const list = (raw || [])
     .map((p) => {
@@ -573,13 +1204,10 @@ function normalizeMediaPosts(raw) {
       const urls = bestUrl(m, p);
       const audio_url = urls.audio_url;
       const media_url = urls.media_url;
-
       const duration = asStr(m.duration || "").trim();
       const platform = asStr(m.platform || "").trim() || inferPlatform(media_url || audio_url);
-
       const ip = pickIp(m);
       const card_img = pickCardImage(p, m);
-
       return {
         ...p,
         metadata: m,
@@ -600,85 +1228,122 @@ function normalizeMediaPosts(raw) {
       };
     })
     .filter((it) => !!asStr(it.audio_url).trim() || !!asStr(it.media_url).trim());
-
   list.sort((a, b) => new Date(b.created_at || b.updated_at || 0) - new Date(a.created_at || a.updated_at || 0));
   return list;
 }
-
 function matchesUniverseIp(item, universe) {
   if (!item || !universe) return false;
-
   const ip = safeStr(item.ip).toLowerCase();
   const title = safeStr(universe.title).toLowerCase();
   const slug = safeStr(universe.slug).toLowerCase();
-
   const m = item.metadata || {};
   const mu = safeStr(m.universe).toLowerCase();
   const mb = safeStr(m.book).toLowerCase();
   const ms = safeStr(m.series).toLowerCase();
   const mip = safeStr(m.ip).toLowerCase();
   const mf = safeStr(m.franchise).toLowerCase();
-
   // strong matches
   if (ip && title && ip === title) return true;
   if (ip && slug && ip === slug) return true;
-
   // metadata matches
   if (mu && title && mu === title) return true;
   if (mu && slug && mu === slug) return true;
-
   if (mb && title && mb === title) return true;
   if (mb && slug && mb === slug) return true;
-
   if (ms && title && ms === title) return true;
   if (ms && slug && ms === slug) return true;
-
   if (mip && title && mip === title) return true;
   if (mip && slug && mip === slug) return true;
-
   if (mf && title && mf === title) return true;
   if (mf && slug && mf === slug) return true;
-
-  // partial / contains (helps if you store "Legacy of the Hidden Clans (LOHC)" etc)
+  // partial / contains
   const hay = [ip, mu, mb, ms, mip, mf].filter(Boolean).join(" ");
   if (title && hay.includes(title)) return true;
   if (slug && hay.includes(slug)) return true;
-
   return false;
 }
-
+/* ------------------------------
+   Soundtrack selection logic
+--------------------------------*/
+function getPlaysScore(item) {
+  const m = item?.metadata || {};
+  const candidates = [
+    item?.play_count,
+    item?.plays,
+    item?.view_count,
+    item?.views,
+    m?.play_count,
+    m?.plays,
+    m?.view_count,
+    m?.views,
+    m?.listen_count,
+    m?.listens,
+  ]
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n));
+  if (!candidates.length) return 0;
+  return Math.max(...candidates);
+}
+function getRecencyTs(item) {
+  const t = item?.updated_at || item?.created_at || item?.metadata?.updated_at || item?.metadata?.created_at || 0;
+  const ts = new Date(t || 0).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+function pickSoundtrackCandidate({ mediaPosts = [], audioItems = [] }) {
+  // 1) Any explicit playlist in the media feed wins
+  const playlist = (mediaPosts || []).find((it) => normalizeType(it.media_type) === "playlist" && safeStr(it.media_url || it.audio_url));
+  if (playlist) return { kind: "playlist", item: playlist };
+  // 2) Otherwise: pick "best track" (most played, else most recent) from audio items
+  const candidates = (audioItems || []).filter((it) => {
+    const t = normalizeType(it.media_type);
+    const url = safeStr(it.media_url || it.audio_url);
+    if (!url) return false;
+    if (t === "trailer") return false;
+    return (
+      ["soundtrack", "score", "chapter_read", "audiobook", "scene"].includes(t) ||
+      isDirectAudio(url) ||
+      isYoutube(url) ||
+      url.includes("spotify.com") ||
+      url.includes("soundcloud.com")
+    );
+  });
+  if (!candidates.length) return null;
+  const sorted = candidates
+    .slice()
+    .sort((a, b) => {
+      const ap = getPlaysScore(a);
+      const bp = getPlaysScore(b);
+      if (bp !== ap) return bp - ap;
+      return getRecencyTs(b) - getRecencyTs(a);
+    });
+  return { kind: "auto", item: sorted[0] };
+}
 export default function StudioUniverse() {
   const router = useRouter();
   const { slug } = router.query;
-
   // ✅ vault toggle via query param
   const showVault = useMemo(() => String(router.query?.vault || "") === "1", [router.query?.vault]);
-
+  // ✅ NEW: simulated viewer access tier via query param
+  const [viewerTier, setViewerTier] = useState("public");
+  const [entLoading, setEntLoading] = useState(true);
   const [universe, setUniverse] = useState(null);
   const [assets, setAssets] = useState([]);
   const [studioPages, setStudioPages] = useState([]);
   const [mediaPosts, setMediaPosts] = useState([]); // ✅ same source as /media.js
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     if (!slug) return;
-
     let cancelled = false;
-
     (async () => {
       setLoading(true);
-
       const { data: u, error: uErr } = await supabase
         .from("universes")
         .select("*")
         .eq("slug", slug)
         .maybeSingle();
-
       if (uErr) console.error(uErr);
       if (cancelled) return;
-
       setUniverse(u || null);
-
       if (!u?.id) {
         setAssets([]);
         setStudioPages([]);
@@ -686,7 +1351,6 @@ export default function StudioUniverse() {
         setLoading(false);
         return;
       }
-
       const [{ data: a, error: aErr }, { data: pages, error: pErr }] = await Promise.all([
         supabase
           .from("universe_assets")
@@ -695,7 +1359,6 @@ export default function StudioUniverse() {
           .eq("status", "published")
           .order("sort_order", { ascending: true })
           .order("updated_at", { ascending: false }),
-
         supabase
           .from("studio_pages")
           .select("*")
@@ -704,14 +1367,11 @@ export default function StudioUniverse() {
           .order("sort_order", { ascending: true })
           .order("updated_at", { ascending: false }),
       ]);
-
       if (aErr) console.error(aErr);
       if (pErr) console.error(pErr);
-
       if (cancelled) return;
       setAssets(a || []);
       setStudioPages(pages || []);
-
       // ✅ pull media from SAME endpoint as /pages/media.js
       try {
         const res = await fetch("/api/posts?division=media");
@@ -724,22 +1384,48 @@ export default function StudioUniverse() {
         console.error("studio media fetch error:", err);
         setMediaPosts([]);
       }
-
       setLoading(false);
+      // after universe is loaded and has id:
+      try {
+        setEntLoading(true);
+        const { data: auth } = await supabase.auth.getUser();
+        const user = auth?.user;
+        if (user?.id) {
+          const { data: ent } = await supabase
+            .from("studio_entitlements")
+            .select("tier, status, expires_at, created_at")
+            .eq("user_id", user.id)
+            .eq("universe_id", u.id)
+            .eq("status", "active")
+            .order("created_at", { ascending: false });
+          // pick highest active tier
+          const rank = { public: 0, priority: 1, producer: 2, packaging: 3 };
+          let best = "public";
+          (ent || []).forEach((e) => {
+            const t = String(e.tier || "").toLowerCase();
+            if ((rank[t] ?? 0) > (rank[best] ?? 0)) best = t;
+          });
+          setViewerTier(best);
+        } else {
+          setViewerTier("public");
+        }
+      } catch (e) {
+        console.warn("entitlement lookup failed", e);
+        setViewerTier("public");
+      } finally {
+        setEntLoading(false);
+      }
     })();
-
     return () => {
       cancelled = true;
     };
   }, [slug]);
-
   const heroImages = useMemo(() => {
     const thumbs = assets.map((x) => getThumb(x)).filter(Boolean).slice(0, 6);
     if (thumbs.length) return thumbs;
     if (universe?.cover_image_url) return [universe.cover_image_url];
     return ["/images/og-home.webp"];
   }, [assets, universe]);
-
   const trailerAsset = useMemo(() => {
     return (
       assets.find((x) => safeStr(x.asset_type).toLowerCase() === "trailer") ||
@@ -749,11 +1435,9 @@ export default function StudioUniverse() {
       null
     );
   }, [assets]);
-
   const trailerUrl = useMemo(() => {
     return getAssetUrl(trailerAsset) || universe?.hero_video_url || null;
   }, [trailerAsset, universe]);
-
   // World maps (STRICT: only world maps)
   const worldMapAssets = useMemo(() => {
     return assets
@@ -764,13 +1448,10 @@ export default function StudioUniverse() {
       )
       .filter((a) => getThumb(a) || a.external_url);
   }, [assets]);
-
   const featuredWorldMapUrl = useMemo(() => universe?.world_map_url || null, [universe]);
-
   const hasWorldMapSection = useMemo(() => {
     return worldMapAssets.length > 0 || Boolean(featuredWorldMapUrl);
   }, [worldMapAssets.length, featuredWorldMapUrl]);
-
   // Visuals raw (STRICT: exclude world maps always)
   const visualAssetsRaw = useMemo(() => {
     return assets.filter((a) => {
@@ -779,14 +1460,11 @@ export default function StudioUniverse() {
       const url = getAssetUrl(a);
       const ft = guessFileType(url);
       const kind = safeStr(a?.metadata?.kind).toLowerCase();
-
       const isWorldMap =
         t === "world_map" ||
         kind === "world_map" ||
         safeStr(a?.metadata?.media_type).toLowerCase() === "world_map";
-
       if (isWorldMap) return false;
-
       return (
         ["image", "art", "still", "poster", "cover"].includes(t) ||
         div === "designs" ||
@@ -795,7 +1473,6 @@ export default function StudioUniverse() {
       );
     });
   }, [assets]);
-
   // ✅ Visual Identity = MERCH ONLY (no tabs)
   const merchAssets = useMemo(() => {
     const isMerch = (a) => {
@@ -804,7 +1481,6 @@ export default function StudioUniverse() {
       const purpose = safeStr(a?.purpose).toLowerCase();
       const tags = Array.isArray(a?.tags) ? a.tags.map((x) => safeStr(x).toLowerCase()) : [];
       const title = safeStr(a?.title).toLowerCase();
-
       return (
         ["merch", "mockup", "tshirt", "hoodie", "shirt", "product"].includes(t) ||
         ["merch", "mockup", "product"].includes(kind) ||
@@ -817,10 +1493,8 @@ export default function StudioUniverse() {
         title.includes("hoodie")
       );
     };
-
     return visualAssetsRaw.filter(isMerch);
   }, [visualAssetsRaw]);
-
   // Characters (STRICT: only characters)
   const characterAssets = useMemo(() => {
     return assets.filter((a) => {
@@ -829,7 +1503,6 @@ export default function StudioUniverse() {
       return t === "character" || kind === "character";
     });
   }, [assets]);
-
   // ✅ AUDIO (FROM SAME SOURCE AS /media.js)
   const audioItems = useMemo(() => {
     const isAudioLike = (it) => {
@@ -840,16 +1513,13 @@ export default function StudioUniverse() {
     };
     return (mediaPosts || []).filter(isAudioLike);
   }, [mediaPosts]);
-
-  // Official soundtrack link (prefer playlist type from posts, fall back to universe_assets)
+  // Official soundtrack link (prefer playlist type from posts, fall back to universe_assets, else auto-pick best track)
   const soundtrackFromPosts = useMemo(() => {
     const pick = (mediaPosts || []).find((it) => normalizeType(it.media_type) === "playlist");
     return pick || null;
   }, [mediaPosts]);
-
   const soundtrackUrl = useMemo(() => {
     if (soundtrackFromPosts) return safeStr(soundtrackFromPosts.media_url || soundtrackFromPosts.audio_url);
-
     // fallback (old behavior)
     const fallbackAsset =
       assets.find((x) => safeStr(x.asset_type).toLowerCase() === "soundtrack") ||
@@ -857,7 +1527,6 @@ export default function StudioUniverse() {
       assets.find((x) => safeStr(x?.media_type).toLowerCase() === "playlist") ||
       assets.find((x) => safeStr(x.division).toLowerCase() === "media") ||
       null;
-
     return (
       fallbackAsset?.external_url ||
       fallbackAsset?.file_url ||
@@ -865,8 +1534,40 @@ export default function StudioUniverse() {
       fallbackAsset?.metadata?.audio_url ||
       ""
     );
-  }, [soundtrackFromPosts, assets, mediaPosts]);
-
+  }, [soundtrackFromPosts, assets]);
+  const soundtrackCandidate = useMemo(() => {
+    return pickSoundtrackCandidate({ mediaPosts, audioItems });
+  }, [mediaPosts, audioItems]);
+  const soundtrackResolved = useMemo(() => {
+    // Priority: explicit soundtrackUrl > candidate item
+    if (safeStr(soundtrackUrl)) {
+      return {
+        source: "manual",
+        url: safeStr(soundtrackUrl),
+        item: soundtrackFromPosts || null,
+        label: "Official Soundtrack",
+      };
+    }
+    if (soundtrackCandidate?.item) {
+      const it = soundtrackCandidate.item;
+      const url = safeStr(it.media_url || it.audio_url);
+      if (!url) return null;
+      const plays = getPlaysScore(it);
+      const kindLabel =
+        soundtrackCandidate.kind === "playlist"
+          ? "Official Playlist"
+          : plays > 0
+          ? "Top Track"
+          : "Most Recent Track";
+      return {
+        source: "auto",
+        url,
+        item: it,
+        label: kindLabel,
+      };
+    }
+    return null;
+  }, [soundtrackUrl, soundtrackFromPosts, soundtrackCandidate]);
   const producerPacket = useMemo(() => {
     return (
       assets.find(
@@ -877,11 +1578,9 @@ export default function StudioUniverse() {
       ) || null
     );
   }, [assets]);
-
   const nftAssets = useMemo(() => {
     return assets.filter((a) => safeStr(a.asset_type).toLowerCase() === "nft" || a?.metadata?.nft_url);
   }, [assets]);
-
   const producerEmailHref = useMemo(() => {
     if (!universe?.title || !universe?.slug) return "mailto:studios@manyagi.net";
     const subject = `Option / Licensing Inquiry — ${universe.title}`;
@@ -891,7 +1590,6 @@ export default function StudioUniverse() {
       `Company:\nRole:\nBudget Range:\nTimeline:\nWhat are you looking to option?\nNotes:\n`;
     return `mailto:studios@manyagi.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   }, [universe]);
-
   const quickSignals = useMemo(() => {
     const signals = [];
     if (trailerUrl) signals.push("Trailer Ready");
@@ -903,6 +1601,7 @@ export default function StudioUniverse() {
     if (nftAssets.length) signals.push("Collectibles");
     if (studioPages.length) signals.push(`${studioPages.length} Studio Pages`);
     if (showVault) signals.push("Vault View");
+    signals.push(`Tier: ${tierLabel(viewerTier)}`);
     return signals;
   }, [
     trailerUrl,
@@ -914,13 +1613,12 @@ export default function StudioUniverse() {
     nftAssets.length,
     studioPages.length,
     showVault,
+    viewerTier,
   ]);
-
   const canonicalUrl = useMemo(() => {
     if (!universe?.slug) return "";
     return `https://manyagi.net/studios/${universe.slug}`;
   }, [universe]);
-
   const jsonLd = useMemo(() => {
     if (!universe?.title) return null;
     return {
@@ -933,28 +1631,58 @@ export default function StudioUniverse() {
       publisher: { "@type": "Organization", name: "Manyagi Studios" },
     };
   }, [universe, canonicalUrl]);
-
-  // ✅ grouped studio pages + TOC
-  const groupedPages = useMemo(() => groupStudioPages(studioPages, showVault), [studioPages, showVault]);
+  // ✅ grouped studio pages + TOC (NOW tier-filtered)
+  const groupedPages = useMemo(() => groupStudioPages(studioPages, showVault, viewerTier), [studioPages, showVault, viewerTier]);
   const packageBar = useMemo(() => packageProgress(studioPages), [studioPages]);
-
   const studioToc = useMemo(() => {
     const toc = [];
     groupedPages.forEach((g) => {
       toc.push({ id: `pkg-${g.key}`, label: g.title, kind: "group" });
       g.pages.forEach((p) => {
+        const pageTier = getPageAccessTier(p);
         toc.push({
           id: `p-${p.id}`,
           label: p.title || niceTypeLabel(p.page_type),
           kind: "page",
           tag: niceTypeLabel(p.page_type),
           vault: getPageVisibility(p) === "vault",
+          tier: pageTier,
         });
       });
     });
     return toc;
   }, [groupedPages]);
-
+  async function startStudioCheckout(tier) {
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const token = auth?.session?.access_token;
+      if (!token) {
+        router.push(`/login?next=${encodeURIComponent(router.asPath)}`);
+        return;
+      }
+      // Map tier to your Supabase product UUIDs (replace with real IDs from step 2)
+      const STUDIO_ACCESS_PRODUCT_IDS = {
+        priority: "YOUR_PRIORITY_PRODUCT_UUID_HERE",  // e.g., "123e4567-e89b-12d3-a456-426614174000"
+        producer: "YOUR_PRODUCER_PRODUCT_UUID_HERE",
+        packaging: "YOUR_PACKAGING_PRODUCT_UUID_HERE",
+      };
+      const product_id = STUDIO_ACCESS_PRODUCT_IDS[tier];
+      if (!product_id) throw new Error("Invalid tier");
+      const res = await fetch("/api/checkout/create-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ product_id, quantity: 1 }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Checkout failed");
+      if (json?.url) window.location.href = json.url;
+    } catch (e) {
+      alert(e.message || "Checkout failed");
+    }
+  }
   if (loading) {
     return (
       <section className="container mx-auto px-4 py-16">
@@ -962,7 +1690,6 @@ export default function StudioUniverse() {
       </section>
     );
   }
-
   if (!universe) {
     return (
       <section className="container mx-auto px-4 py-16">
@@ -973,12 +1700,11 @@ export default function StudioUniverse() {
       </section>
     );
   }
-
   // ✅ nav order updated to match the new layout (Package moved BELOW Adaptation Assets)
   const navItems = [
     { href: "#one-sheet", label: "One-Sheet" },
     ...(trailerUrl ? [{ href: "#trailer", label: "Trailer" }] : []),
-    ...(audioItems.length ? [{ href: "#audio", label: "Sound" }] : []),
+    ...(audioItems.length || soundtrackResolved ? [{ href: "#audio", label: "Sound" }] : []),
     ...(characterAssets.length ? [{ href: "#characters", label: "Characters" }] : []),
     ...(hasWorldMapSection ? [{ href: "#world-map", label: "World Map" }] : []),
     { href: "#visuals", label: "Merch" },
@@ -986,34 +1712,27 @@ export default function StudioUniverse() {
     ...(groupedPages.length ? [{ href: "#package", label: "Producer Materials" }] : []),
     { href: "#contact", label: "Options" },
   ];
-
-  const isSoundtrackSpotify = soundtrackUrl?.includes("spotify.com");
-  const isSoundtrackYT = isYoutube(soundtrackUrl);
-  const isSoundtrackAudioFile = ["mp3", "wav", "m4a", "ogg"].includes(guessFileType(soundtrackUrl));
-
+  const resolvedSoundtrackUrl = soundtrackResolved?.url || "";
+  const isSoundtrackSpotify = resolvedSoundtrackUrl.includes("spotify.com");
+  const isSoundtrackYT = isYoutube(resolvedSoundtrackUrl);
+  const isSoundtrackAudioFile = ["mp3", "wav", "m4a", "ogg"].includes(guessFileType(resolvedSoundtrackUrl));
   return (
     <>
       <Head>
         <title>{universe.title} — Manyagi Studios</title>
         <meta name="description" content={universe.logline || universe.tagline || "A Manyagi Studios Universe."} />
         {canonicalUrl ? <link rel="canonical" href={canonicalUrl} /> : null}
-
         <meta property="og:type" content="website" />
         <meta property="og:title" content={`${universe.title} — Manyagi Studios`} />
         <meta property="og:description" content={universe.logline || universe.tagline || "A Manyagi Studios Universe."} />
         {canonicalUrl ? <meta property="og:url" content={canonicalUrl} /> : null}
         {heroImages?.[0] ? <meta property="og:image" content={heroImages[0]} /> : null}
-
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={`${universe.title} — Manyagi Studios`} />
         <meta name="twitter:description" content={universe.logline || universe.tagline || "A Manyagi Studios Universe."} />
         {heroImages?.[0] ? <meta name="twitter:image" content={heroImages[0]} /> : null}
-
-        {jsonLd ? (
-          <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-        ) : null}
+        {jsonLd ? <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} /> : null}
       </Head>
-
       <Hero
         kicker="Manyagi Studios"
         title={universe.title}
@@ -1030,8 +1749,7 @@ export default function StudioUniverse() {
               ▶ Watch Trailer
             </a>
           ) : null}
-
-          {audioItems.length ? (
+          {audioItems.length || soundtrackResolved ? (
             <a
               href="#audio"
               className="btn bg-white/90 text-gray-900 border border-gray-200 py-2 px-4 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
@@ -1039,7 +1757,6 @@ export default function StudioUniverse() {
               🎧 Listen
             </a>
           ) : null}
-
           {groupedPages.length ? (
             <a
               href="#package"
@@ -1048,28 +1765,21 @@ export default function StudioUniverse() {
               📦 Producer Materials
             </a>
           ) : null}
-
-          <a
-            href="#vault"
-            className="btn bg-white/90 text-gray-900 border border-gray-200 py-2 px-4 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
-          >
+          <a href="#vault" className="btn bg-white/90 text-gray-900 border border-gray-200 py-2 px-4 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800">
             View Adaptation Assets
           </a>
-
           <a href={producerEmailHref} className="btn bg-amber-200 text-amber-950 py-2 px-4 rounded hover:bg-amber-300 transition">
             💼 Options / Licensing
           </a>
-
           {/* ✅ Vault toggle */}
           <Link
-            href={showVault ? `/studios/${universe.slug}` : `/studios/${universe.slug}?vault=1`}
+            href={showVault ? `/studios/${universe.slug}?tier=${viewerTier}` : `/studios/${universe.slug}?vault=1&tier=${viewerTier}`}
             className="btn bg-white/90 text-gray-900 border border-gray-200 py-2 px-4 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
           >
             {showVault ? "🔒 Hide Vault" : "🔓 Vault View"}
           </Link>
         </div>
       </Hero>
-
       {/* Micro-nav strip */}
       <section className="container mx-auto px-4 -mt-8 mb-10">
         <div className="flex gap-2 overflow-x-auto no-scrollbar justify-center text-xs md:text-[13px]">
@@ -1084,7 +1794,10 @@ export default function StudioUniverse() {
           ))}
         </div>
       </section>
-
+      {/* ✅ NEW: Packages selector / sales rail */}
+      <section className="container mx-auto px-4 pb-10 -mt-2">
+        <PackagesBar universe={universe} viewerTier={viewerTier} showVault={showVault} />
+      </section>
       <SectionIntro
         id="one-sheet"
         kicker="Studio One-Sheet"
@@ -1092,7 +1805,6 @@ export default function StudioUniverse() {
         lead="A fast executive read — built for the first five minutes of a serious conversation."
         tone="warm"
       />
-
       <section className="container mx-auto px-4 pb-12 -mt-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 rounded-3xl bg-white/80 dark:bg-gray-900/70 border border-amber-100/80 dark:border-gray-800 shadow-sm p-6 md:p-8">
@@ -1106,17 +1818,14 @@ export default function StudioUniverse() {
                 </span>
               ))}
             </div>
-
             <h3 className="text-2xl font-bold">Logline</h3>
             <p className="mt-2 text-base opacity-90">
               {universe.logline || "Add a studio-grade logline in Admin → Universes."}
             </p>
-
             <h3 className="text-2xl font-bold mt-6">Synopsis</h3>
             <p className="mt-2 opacity-90 leading-relaxed">
               {universe.synopsis || "Add a studio-grade synopsis in Admin → Universes."}
             </p>
-
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
               <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 p-4">
                 <div className="text-xs opacity-60 uppercase tracking-wider">Tone</div>
@@ -1132,11 +1841,9 @@ export default function StudioUniverse() {
               </div>
             </div>
           </div>
-
           <div className="rounded-3xl bg-white/80 dark:bg-gray-900/70 border border-amber-100/80 dark:border-gray-800 shadow-sm p-6 md:p-8">
             <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Executive Scan</div>
             <h3 className="text-xl font-bold mt-2">At a glance</h3>
-
             <div className="mt-4 flex flex-col gap-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Trailer</div>
@@ -1144,7 +1851,9 @@ export default function StudioUniverse() {
               </div>
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Sound</div>
-                <div className="text-sm font-semibold text-right">{audioItems.length ? `${audioItems.length} cues` : "—"}</div>
+                <div className="text-sm font-semibold text-right">
+                  {audioItems.length ? `${audioItems.length} cues` : soundtrackResolved ? "Available" : "—"}
+                </div>
               </div>
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Characters</div>
@@ -1165,29 +1874,26 @@ export default function StudioUniverse() {
                 </div>
               </div>
               <div className="flex items-start justify-between gap-4">
-                <div className="text-sm opacity-70">Producer Packet</div>
-                <div className="text-sm font-semibold text-right">{producerPacket ? "Gated" : "—"}</div>
+                <div className="text-sm opacity-70">Viewing Tier</div>
+                <div className="text-sm font-semibold text-right">{tierLabel(viewerTier)}</div>
               </div>
             </div>
-
             <div className="mt-6 rounded-2xl bg-black text-white dark:bg-white dark:text-black p-4">
               <div className="text-sm font-semibold">Options / Licensing</div>
               <div className="text-xs opacity-80 mt-1">Company • budget • timeline</div>
               <a
                 href={producerEmailHref}
-                className="mt-4 inline-flex w-full justify-center px-4 py-2 rounded-xl bg-amber-200 text-amber-950 font-semibold hover:bg-amber-300 transition"
+                className="mt-4 inline-flex w-full justify-center px-4 py-2 rounded-xl bg-amber-200 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100 font-semibold hover:bg-amber-300 transition"
               >
                 Request Conversation
               </a>
             </div>
-
             <div className="mt-4 text-xs opacity-60">
-              Tip: Publish “Comparable Titles” + “Beat Sheet” + “Season 1 Outline” to increase optionability.
+              Tip: Set <code>metadata.access_tier</code> on each studio page so packages unlock cleanly.
             </div>
           </div>
         </div>
       </section>
-
       {/* TRAILER */}
       {trailerUrl ? (
         <>
@@ -1203,9 +1909,8 @@ export default function StudioUniverse() {
           </section>
         </>
       ) : null}
-
-      {/* AUDIO (FROM /api/posts?division=media, same as /media.js) */}
-      {audioItems.length ? (
+      {/* AUDIO + SOUNDTRACK */}
+      {(audioItems.length || soundtrackResolved) ? (
         <>
           <SectionIntro
             id="audio"
@@ -1215,65 +1920,67 @@ export default function StudioUniverse() {
             tone="neutral"
             align="center"
           />
-
           <section className="container mx-auto px-4 pb-14 -mt-6">
-            <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8 mb-6">
-              <div className="flex flex-wrap gap-2 items-center justify-between">
-                <div>
-                  <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Listening order</div>
-                  <div className="text-xl font-bold mt-1">Main Theme → Hero → Villain → Trailer Cue</div>
-                  <div className="text-sm opacity-80 mt-2">Designed to be skimmed fast, then revisited deeper.</div>
+            <HeaderCard
+              kicker="Listening order"
+              title="Main Theme → Hero → Villain → Trailer Cue"
+              subtitle="Designed to be skimmed fast, then revisited deeper."
+              rightChips={["Motif-driven", "Trailer-ready", "Synced with /media"]}
+              align="left"
+              className="mb-6"
+            />
+            {audioItems.length ? (
+              audioItems.length === 1 ? (
+                <div className="flex justify-center">
+                  <div className="w-full max-w-3xl">
+                    <AudioCard a={audioItems[0]} />
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2 justify-end">
-                  {chip("Motif-driven")}
-                  {chip("Trailer-ready")}
-                  {chip("Synced with /media")}
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {audioItems.map((a) => (
+                    <AudioCard key={a.id} a={a} />
+                  ))}
                 </div>
-              </div>
-            </div>
-
-            {audioItems.length === 1 ? (
-              <div className="flex justify-center">
-                <div className="w-full max-w-3xl">
-                  <AudioCard a={audioItems[0]} />
-                </div>
-              </div>
+              )
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {audioItems.map((a) => (
-                  <AudioCard key={a.id} a={a} />
-                ))}
+              <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm p-6 md:p-8 text-center">
+                <div className="text-lg font-bold">No cues published yet</div>
+                <div className="opacity-80 mt-2">Publish media posts tagged to this universe to auto-sync here.</div>
               </div>
             )}
-
-            {/* Official Soundtrack */}
-            {soundtrackUrl ? (
+            {/* OFFICIAL SOUNDTRACK */}
+            {soundtrackResolved ? (
               <div className="mt-10">
-                <div className="text-center mb-5">
-                  <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Official</div>
-                  <div className="text-2xl font-bold mt-2">Soundtrack</div>
-                  <div className="opacity-80 mt-2">Playlist link (Spotify / YouTube) or the official master track.</div>
-                </div>
-
+                <HeaderCard
+                  kicker="Official"
+                  title="Soundtrack"
+                  subtitle="Playlist link (Spotify / YouTube) or the official master track. If you don’t provide one, this auto-selects your best recent / most-played track."
+                  rightChips={[
+                    soundtrackResolved.source === "manual" ? "Manual link" : "Auto-selected",
+                    soundtrackResolved.label,
+                  ]}
+                  align="center"
+                  className="mb-6"
+                />
                 <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/85 dark:bg-gray-900/60 shadow-sm p-6 md:p-8">
                   {isSoundtrackSpotify ? (
-                    <SpotifyEmbed url={soundtrackUrl} title="Official Soundtrack" />
+                    <SpotifyEmbed url={resolvedSoundtrackUrl} title="Soundtrack" />
                   ) : isSoundtrackYT ? (
-                    <YoutubeEmbed url={soundtrackUrl} title="Official Soundtrack" />
+                    <YoutubeEmbed url={resolvedSoundtrackUrl} title="Soundtrack" />
                   ) : isSoundtrackAudioFile ? (
                     <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/30 p-4">
                       <audio controls preload="none" className="w-full">
-                        <source src={soundtrackUrl} />
+                        <source src={resolvedSoundtrackUrl} />
                       </audio>
                     </div>
                   ) : (
                     <div className="text-sm opacity-70">Soundtrack link detected (open via button).</div>
                   )}
-
                   <div className="mt-4 flex flex-wrap gap-2 justify-center">
                     <a
                       className="px-5 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black font-semibold"
-                      href={soundtrackUrl}
+                      href={resolvedSoundtrackUrl}
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -1285,11 +1992,9 @@ export default function StudioUniverse() {
                         ? "Open Audio →"
                         : "Open Soundtrack →"}
                     </a>
-
-                    {/* If playlist post exists, deep link to its details */}
-                    {soundtrackFromPosts?.slug ? (
+                    {soundtrackResolved?.item?.slug ? (
                       <Link
-                        href={`/media/${soundtrackFromPosts.slug}`}
+                        href={`/media/${soundtrackResolved.item.slug}`}
                         className="px-5 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40 font-semibold"
                       >
                         View Details →
@@ -1302,7 +2007,6 @@ export default function StudioUniverse() {
           </section>
         </>
       ) : null}
-
       {/* CHARACTERS */}
       {characterAssets.length ? (
         <>
@@ -1314,7 +2018,6 @@ export default function StudioUniverse() {
             tone="neutral"
             align="center"
           />
-
           <section className="container mx-auto px-4 pb-14 -mt-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               {characterAssets.map((c) => (
@@ -1332,13 +2035,11 @@ export default function StudioUniverse() {
                   ) : (
                     <div className="w-full h-64 bg-gray-100 dark:bg-gray-800" />
                   )}
-
                   <div className="p-4">
                     <div className="font-semibold text-lg">{c.title || "Character"}</div>
                     {c.description ? (
                       <div className="text-sm opacity-80 mt-2 whitespace-pre-wrap leading-relaxed">{c.description}</div>
                     ) : null}
-
                     {c?.metadata?.role || c?.metadata?.character_name ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {c?.metadata?.character_name ? chip(String(c.metadata.character_name)) : null}
@@ -1352,7 +2053,6 @@ export default function StudioUniverse() {
           </section>
         </>
       ) : null}
-
       {/* WORLD MAP */}
       {hasWorldMapSection ? (
         <>
@@ -1364,7 +2064,6 @@ export default function StudioUniverse() {
             tone="neutral"
             align="center"
           />
-
           <section className="container mx-auto px-4 pb-14 -mt-6">
             {featuredWorldMapUrl && worldMapAssets.length === 0 ? (
               <div className="rounded-3xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm">
@@ -1375,7 +2074,6 @@ export default function StudioUniverse() {
                 </div>
               </div>
             ) : null}
-
             {worldMapAssets.length ? (
               <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2 snap-x snap-mandatory">
                 {worldMapAssets.map((m) => (
@@ -1410,7 +2108,6 @@ export default function StudioUniverse() {
           </section>
         </>
       ) : null}
-
       {/* VISUAL IDENTITY (MERCH ONLY) */}
       <SectionIntro
         id="visuals"
@@ -1420,7 +2117,6 @@ export default function StudioUniverse() {
         tone="neutral"
         align="center"
       />
-
       <section className="container mx-auto px-4 pb-14 -mt-6">
         {merchAssets.length ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -1455,7 +2151,6 @@ export default function StudioUniverse() {
           </div>
         )}
       </section>
-
       {/* IP VAULT (Adaptation Assets) */}
       <SectionIntro
         id="vault"
@@ -1465,7 +2160,6 @@ export default function StudioUniverse() {
         tone="warm"
         align="center"
       />
-
       <section className="container mx-auto px-4 pb-14 -mt-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {producerPacket ? (
@@ -1489,7 +2183,6 @@ export default function StudioUniverse() {
               <div className="text-sm opacity-70">Currently not configured.</div>
             </Card>
           )}
-
           {nftAssets.map((a) => (
             <Card key={a.id} title={a.title || "Collectible"} description="Limited edition collectible / unlockable.">
               {a.metadata?.nft_url ? (
@@ -1501,9 +2194,8 @@ export default function StudioUniverse() {
               )}
             </Card>
           ))}
-
-          {audioItems.length ? (
-            <Card title="Sound Package" description="Themes + cues for trailer identity and tone lock (synced from /media).">
+          {(audioItems.length || soundtrackResolved) ? (
+            <Card title="Sound Package" description="Themes + cues + soundtrack (synced from /media).">
               <a className="underline" href="#audio">
                 Open sound →
               </a>
@@ -1511,8 +2203,7 @@ export default function StudioUniverse() {
           ) : null}
         </div>
       </section>
-
-      {/* ✅ MOVED: Producer-Ready Materials BELOW Adaptation Assets */}
+      {/* Producer-Ready Materials */}
       {groupedPages.length ? (
         <>
           <SectionIntro
@@ -1523,10 +2214,24 @@ export default function StudioUniverse() {
             tone="neutral"
             align="center"
           />
-
           <section className="container mx-auto px-4 pb-14 -mt-6">
+            {/* ✅ NEW: Gate the whole section by tier if you want (default public allows whatever pages are marked public) */}
+            <AccessGateCard
+              viewerTier={viewerTier}
+              requiredTier="public"
+              title="Producer Materials"
+              subtitle="If a page is marked Priority / Producer / Packaging, it will only show when you view that tier."
+              universe={universe}
+            />
+            {/* ✅ NEW: Locked sections preview list (titles only) */}
+            <LockedSectionsPreview
+              universe={universe}
+              pages={studioPages}
+              viewerTier={viewerTier}
+              showVault={showVault}
+            />
             {/* Package meter + TOC */}
-            <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8 mb-6">
+            <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8 mb-6 mt-6">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Package completeness</div>
@@ -1537,7 +2242,6 @@ export default function StudioUniverse() {
                     Add missing pages in Admin → Studio Pages. Vault pages are hidden unless <code>?vault=1</code>.
                   </div>
                 </div>
-
                 <div className="min-w-[220px] flex-1">
                   <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-800 border overflow-hidden mt-2">
                     <div
@@ -1545,15 +2249,14 @@ export default function StudioUniverse() {
                       style={{ width: `${Math.round((packageBar.count / packageBar.total) * 100)}%` }}
                     />
                   </div>
-
                   <div className="mt-4 flex flex-wrap gap-2 justify-end">
                     {showVault ? chip("Vault: ON") : chip("Vault: OFF")}
+                    {chip(`Tier: ${tierLabel(viewerTier)}`)}
                     {chip("Copy-paste friendly")}
                     {chip("Executive order")}
                   </div>
                 </div>
               </div>
-
               {/* TOC */}
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
                 {studioToc.slice(0, 18).map((t) => {
@@ -1573,20 +2276,23 @@ export default function StudioUniverse() {
                     <a
                       key={t.id}
                       href={`#${t.id}`}
-                      className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 px-4 py-3 hover:border-gray-400 transition"
+                      className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 px-4 py-3 hover:border-amber-400 transition"
                       title={t.tag}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="font-semibold">{t.label}</div>
-                        {t.vault ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
-                            vault
-                          </span>
-                        ) : (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-900/40">
-                            public
-                          </span>
-                        )}
+                        <div className="flex gap-2 items-center">
+                          <span className={tierBadge(t.tier)}>{tierLabel(t.tier)}</span>
+                          {t.vault ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
+                              vault
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-900/40">
+                              public
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="text-xs opacity-70 mt-1">{t.tag}</div>
                     </a>
@@ -1594,22 +2300,24 @@ export default function StudioUniverse() {
                 })}
               </div>
             </div>
-
             {/* Groups */}
             <div className="space-y-10">
               {groupedPages.map((g) => (
                 <div key={g.key} id={`pkg-${g.key}`} className="scroll-mt-28">
-                  <div className="text-center mb-5">
-                    <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">{g.kicker}</div>
-                    <div className="text-3xl font-bold mt-2">{g.title}</div>
-                    <div className="opacity-80 mt-2">{g.lead}</div>
-                  </div>
-
+                  <HeaderCard
+                    kicker={g.kicker}
+                    title={g.title}
+                    subtitle={g.lead}
+                    rightChips={g.chips || []}
+                    align="center"
+                    className="mb-6"
+                  />
                   <div className="grid grid-cols-1 gap-5">
                     {g.pages.map((p) => {
                       const vis = getPageVisibility(p);
                       const tag = niceTypeLabel(p.page_type);
                       const anchorId = `p-${p.id}`;
+                      const pageTier = getPageAccessTier(p);
                       return (
                         <div
                           key={p.id}
@@ -1620,6 +2328,7 @@ export default function StudioUniverse() {
                             <div>
                               <div className="flex flex-wrap gap-2 items-center">
                                 <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">{tag}</div>
+                                <span className={tierBadge(pageTier)}>{tierLabel(pageTier)}</span>
                                 {vis === "vault" ? (
                                   <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
                                     vault
@@ -1630,11 +2339,9 @@ export default function StudioUniverse() {
                                   </span>
                                 )}
                               </div>
-
                               <h3 className="text-2xl font-bold mt-2">{p.title || tag}</h3>
                               {p.excerpt ? <div className="mt-2 text-sm opacity-80">{p.excerpt}</div> : null}
                             </div>
-
                             {p.hero_image_url || p.hero_video_url ? (
                               <div className="flex gap-2">
                                 {p.hero_video_url ? (
@@ -1660,9 +2367,9 @@ export default function StudioUniverse() {
                               </div>
                             ) : null}
                           </div>
-
                           <div className="mt-5">{renderPlainMarkdown(p.content_md)}</div>
-
+                          {/* ✅ per-page media rail from StudioPagesTab attachments */}
+                          <PageAttachmentsRail page={p} />
                           <div className="mt-6 flex justify-end">
                             <a href="#package" className="text-sm underline opacity-70 hover:opacity-100">
                               Back to materials ↑
@@ -1677,8 +2384,36 @@ export default function StudioUniverse() {
             </div>
           </section>
         </>
-      ) : null}
-
+      ) : (
+        <>
+          <SectionIntro
+            id="package"
+            kicker="Studio Package"
+            title="Producer-Ready Materials"
+            lead="No pages are visible at your current tier. Publish pages and/or raise your viewing tier to preview gated packages."
+            tone="neutral"
+            align="center"
+          />
+          <section className="container mx-auto px-4 pb-14 -mt-6">
+            <AccessGateCard
+              viewerTier={viewerTier}
+              requiredTier="priority"
+              title="Priority Window materials are not visible"
+              subtitle="Switch to ?tier=priority or set some pages to Public."
+              universe={universe}
+            />
+            {/* ✅ NEW: still show what exists (titles only) */}
+            <div className="mt-6">
+              <LockedSectionsPreview
+                universe={universe}
+                pages={studioPages}
+                viewerTier={viewerTier}
+                showVault={showVault}
+              />
+            </div>
+          </section>
+        </>
+      )}
       {/* CREDITS */}
       <section className="container mx-auto px-4 pb-14">
         <div className="rounded-3xl bg-white/80 dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 shadow-sm p-6 md:p-8">
@@ -1693,7 +2428,6 @@ export default function StudioUniverse() {
               {chip("Original IP")}
             </div>
           </div>
-
           <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 p-4">
               <div className="text-xs opacity-60 uppercase tracking-wider">Created by</div>
@@ -1710,13 +2444,11 @@ export default function StudioUniverse() {
           </div>
         </div>
       </section>
-
       {/* CONTACT */}
       <section className="container mx-auto px-4 pb-20" id="contact">
         <div className="text-center">
           <div className="text-3xl font-bold">Options / Licensing</div>
           <div className="opacity-80 mt-2">Company • budget • timeline</div>
-
           <div className="mt-6 flex flex-wrap gap-3 justify-center">
             <a
               href={producerEmailHref}
@@ -1730,6 +2462,11 @@ export default function StudioUniverse() {
             >
               Back to Library
             </Link>
+          </div>
+          <div className="mt-6 text-xs opacity-60">
+            Dev tip: Start gating pages by adding <code>metadata.access_tier</code> to each studio_page. Example:
+            {" "}
+            <code>{"{\"access_tier\":\"producer\",\"visibility\":\"public\"}"}</code>
           </div>
         </div>
       </section>
