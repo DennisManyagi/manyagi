@@ -1331,6 +1331,7 @@ export default function StudioUniverse() {
   const [studioPages, setStudioPages] = useState([]);
   const [mediaPosts, setMediaPosts] = useState([]); // ✅ same source as /media.js
   const [loading, setLoading] = useState(true);
+  const [tierProducts, setTierProducts] = useState({}); // { priority: product_id, producer: ..., packaging: ... }
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
@@ -1420,6 +1421,25 @@ export default function StudioUniverse() {
       cancelled = true;
     };
   }, [slug]);
+  useEffect(() => {
+    if (!universe?.id) return;
+    async function loadTierProducts() {
+      const { data: products } = await supabase
+        .from("products")
+        .select("id, metadata")
+        .eq("status", "active")
+        .filter("metadata->>universe_id", "eq", universe.id)
+        .filter("metadata->>kind", "eq", "digital"); // Or "studio_access" if you set that
+      const map = {};
+      (products || []).forEach(p => {
+        const meta = safeJson(p.metadata);
+        const tier = normalizeTier(meta.tier);
+        if (tier) map[tier] = p.id;
+      });
+      setTierProducts(map);
+    }
+    loadTierProducts();
+  }, [universe?.id]);
   const heroImages = useMemo(() => {
     const thumbs = assets.map((x) => getThumb(x)).filter(Boolean).slice(0, 6);
     if (thumbs.length) return thumbs;
@@ -1660,14 +1680,8 @@ export default function StudioUniverse() {
         router.push(`/login?next=${encodeURIComponent(router.asPath)}`);
         return;
       }
-      // Map tier to your Supabase product UUIDs (replace with real IDs from step 2)
-      const STUDIO_ACCESS_PRODUCT_IDS = {
-        priority: "YOUR_PRIORITY_PRODUCT_UUID_HERE",  // e.g., "123e4567-e89b-12d3-a456-426614174000"
-        producer: "YOUR_PRODUCER_PRODUCT_UUID_HERE",
-        packaging: "YOUR_PACKAGING_PRODUCT_UUID_HERE",
-      };
-      const product_id = STUDIO_ACCESS_PRODUCT_IDS[tier];
-      if (!product_id) throw new Error("Invalid tier");
+      const product_id = tierProducts[tier];
+      if (!product_id) throw new Error(`No active product found for ${tier} in this universe. Create one in admin.`);
       const res = await fetch("/api/checkout/create-session", {
         method: "POST",
         headers: {

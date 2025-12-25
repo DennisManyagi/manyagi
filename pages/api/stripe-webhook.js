@@ -123,8 +123,6 @@ export default async function handler(req, res) {
             }
 
             // 5) (Optional) fallback transactional email using generic sendEmail
-            //    If you want the basic HTML approach you had before, keep this.
-            //    If not needed, you can delete this block.
             try {
               const html = `
                 <h1>Your Manyagi stay is confirmed ✅</h1>
@@ -146,11 +144,6 @@ export default async function handler(req, res) {
             }
           }
 
-          // Important:
-          // No need to modify availability table here — your
-          // /api/realty/calendar-blocks endpoint already uses
-          // realty_reservations where status='paid', so this guest's
-          // nights will now show as unavailable automatically.
           break;
         }
 
@@ -161,6 +154,7 @@ export default async function handler(req, res) {
           const universe_id = session?.metadata?.universe_id || null;
           const tier = (session?.metadata?.tier || '').toLowerCase();
           const user_id = session?.metadata?.user_id || null;
+          const universe_slug = session?.metadata?.universe_slug || null;
 
           if (!universe_id || !user_id || !tier) {
             console.warn('[studio_access] Missing required metadata', session?.metadata);
@@ -199,22 +193,40 @@ export default async function handler(req, res) {
             throw dbErr;
           }
 
-          // OPTIONAL: email receipt/access (you already have sendEmail wired)
-          // const to = session?.customer_details?.email;
-          // if (to) {
-          //   try {
-          //     const site = process.env.NEXT_PUBLIC_SITE_URL || 'https://manyagi.net';
-          //     const universeSlug = session?.metadata?.universe_slug || '';
-          //     const link = universeSlug ? `${site}/studios/${universeSlug}` : `${site}/studios`;
-          //     await sendEmail({
-          //       to,
-          //       subject: 'Manyagi Studios — Access Granted',
-          //       html: `<h1>Access Granted ✅</h1><p>Your ${tier} access is active.</p><p><a href="${link}">Open your studio package</a></p>`,
-          //     });
-          //   } catch (e) {
-          //     console.warn('[studio_access] sendEmail failed:', e?.message || e);
-          //   }
-          // }
+          // ✅ OPTIONAL: email receipt/access (safe + uses universe_slug if present)
+          const to = session?.customer_details?.email;
+          if (to) {
+            try {
+              const site = process.env.NEXT_PUBLIC_SITE_URL || 'https://manyagi.net';
+              const link = universe_slug
+                ? `${site}/studios/${universe_slug}`
+                : `${site}/studios`;
+
+              const prettyTier =
+                tier === 'priority' ? 'Priority Window' :
+                tier === 'producer' ? 'Producer Packet' :
+                tier === 'packaging' ? 'Packaging Track' :
+                tier;
+
+              const html = `
+                <h1>Access Granted ✅</h1>
+                <p>Your <strong>${prettyTier}</strong> access is active.</p>
+                <p>Expires: <strong>${expires.toLocaleDateString()}</strong></p>
+                <p><a href="${link}">Open your studio package</a></p>
+                <p style="opacity:.75;font-size:12px">
+                  Tip: Your downloads are inside the unlocked pages under the Attachments links.
+                </p>
+              `;
+
+              await sendEmail({
+                to,
+                subject: 'Manyagi Studios — Access Granted',
+                html,
+              });
+            } catch (e) {
+              console.warn('[studio_access] sendEmail failed:', e?.message || e);
+            }
+          }
 
           break; // IMPORTANT: stop here so it doesn't fall into Printful flow
         }
