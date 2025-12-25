@@ -741,11 +741,9 @@ function buildCheckoutHref(universe, tier) {
   const u = universe?.slug ? `/studios/${universe.slug}` : "/studios";
   return `${u}?tier=${encodeURIComponent(tier)}`;
 }
-function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, children }) {
+function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, onCheckout, children }) {
   const allowed = canViewTier(viewerTier, requiredTier);
-  if (allowed) {
-    return children || null;
-  }
+  if (allowed) return children || null;
   return (
     <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/75 dark:bg-gray-900/55 shadow-sm p-6 md:p-8">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -760,7 +758,7 @@ function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, c
         </div>
         <div className="flex flex-col gap-2 min-w-[240px]">
           <button
-            onClick={() => startStudioCheckout(requiredTier)}
+            onClick={() => (typeof onCheckout === "function" ? onCheckout(requiredTier) : null)}
             className="px-5 py-3 rounded-2xl bg-black text-white dark:bg-white dark:text-black font-semibold text-center"
           >
             Unlock {tierLabel(requiredTier)} →
@@ -773,7 +771,7 @@ function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, c
     </div>
   );
 }
-function PackagesBar({ universe, viewerTier, showVault }) {
+function PackagesBar({ universe, viewerTier, showVault, onCheckout }) {
   const tiers = [
     {
       key: "priority",
@@ -869,13 +867,17 @@ function PackagesBar({ universe, viewerTier, showVault }) {
               </ul>
               <div className="mt-4 flex gap-2">
                 <button
-                  onClick={() => startStudioCheckout(t.key)}
+                  onClick={() => (typeof onCheckout === "function" ? onCheckout(t.key) : null)}
                   className="flex-1 px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-semibold text-center"
                 >
                   Unlock →
                 </button>
                 <Link
-                  href={universe?.slug ? `/studios/${universe.slug}?tier=${t.key}${showVault ? "&vault=1" : ""}#package` : "#"}
+                  href={
+                    universe?.slug
+                      ? `/studios/${universe.slug}?tier=${t.key}${showVault ? "&vault=1" : ""}#package`
+                      : "#"
+                  }
                   className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40 text-sm font-semibold"
                 >
                   Preview
@@ -1810,7 +1812,12 @@ export default function StudioUniverse() {
       </section>
       {/* ✅ NEW: Packages selector / sales rail */}
       <section className="container mx-auto px-4 pb-10 -mt-2">
-        <PackagesBar universe={universe} viewerTier={viewerTier} showVault={showVault} />
+        <PackagesBar
+          universe={universe}
+          viewerTier={viewerTier}
+          showVault={showVault}
+          onCheckout={startStudioCheckout}
+        />
       </section>
       <SectionIntro
         id="one-sheet"
@@ -2236,166 +2243,168 @@ export default function StudioUniverse() {
               title="Producer Materials"
               subtitle="If a page is marked Priority / Producer / Packaging, it will only show when you view that tier."
               universe={universe}
-            />
-            {/* ✅ NEW: Locked sections preview list (titles only) */}
-            <LockedSectionsPreview
-              universe={universe}
-              pages={studioPages}
-              viewerTier={viewerTier}
-              showVault={showVault}
-            />
-            {/* Package meter + TOC */}
-            <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8 mb-6 mt-6">
-              <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                  <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Package completeness</div>
-                  <div className="text-2xl font-bold mt-2">
-                    {packageBar.count}/{packageBar.total} ready
+              onCheckout={startStudioCheckout}
+            >
+              {/* ✅ NEW: Locked sections preview list (titles only) */}
+              <LockedSectionsPreview
+                universe={universe}
+                pages={studioPages}
+                viewerTier={viewerTier}
+                showVault={showVault}
+              />
+              {/* Package meter + TOC */}
+              <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8 mb-6 mt-6">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Package completeness</div>
+                    <div className="text-2xl font-bold mt-2">
+                      {packageBar.count}/{packageBar.total} ready
+                    </div>
+                    <div className="text-sm opacity-80 mt-2">
+                      Add missing pages in Admin → Studio Pages. Vault pages are hidden unless <code>?vault=1</code>.
+                    </div>
                   </div>
-                  <div className="text-sm opacity-80 mt-2">
-                    Add missing pages in Admin → Studio Pages. Vault pages are hidden unless <code>?vault=1</code>.
+                  <div className="min-w-[220px] flex-1">
+                    <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-800 border overflow-hidden mt-2">
+                      <div
+                        className="h-full bg-black dark:bg-white"
+                        style={{ width: `${Math.round((packageBar.count / packageBar.total) * 100)}%` }}
+                      />
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2 justify-end">
+                      {showVault ? chip("Vault: ON") : chip("Vault: OFF")}
+                      {chip(`Tier: ${tierLabel(viewerTier)}`)}
+                      {chip("Copy-paste friendly")}
+                      {chip("Executive order")}
+                    </div>
                   </div>
                 </div>
-                <div className="min-w-[220px] flex-1">
-                  <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-800 border overflow-hidden mt-2">
-                    <div
-                      className="h-full bg-black dark:bg-white"
-                      style={{ width: `${Math.round((packageBar.count / packageBar.total) * 100)}%` }}
-                    />
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2 justify-end">
-                    {showVault ? chip("Vault: ON") : chip("Vault: OFF")}
-                    {chip(`Tier: ${tierLabel(viewerTier)}`)}
-                    {chip("Copy-paste friendly")}
-                    {chip("Executive order")}
-                  </div>
-                </div>
-              </div>
-              {/* TOC */}
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
-                {studioToc.slice(0, 18).map((t) => {
-                  if (t.kind === "group") {
+                {/* TOC */}
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {studioToc.slice(0, 18).map((t) => {
+                    if (t.kind === "group") {
+                      return (
+                        <a
+                          key={t.id}
+                          href={`#${t.id}`}
+                          className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 px-4 py-3 hover:border-amber-400 transition"
+                        >
+                          <div className="text-xs opacity-60 uppercase tracking-wider">Section</div>
+                          <div className="font-semibold mt-1">{t.label}</div>
+                        </a>
+                      );
+                    }
                     return (
                       <a
                         key={t.id}
                         href={`#${t.id}`}
                         className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 px-4 py-3 hover:border-amber-400 transition"
+                        title={t.tag}
                       >
-                        <div className="text-xs opacity-60 uppercase tracking-wider">Section</div>
-                        <div className="font-semibold mt-1">{t.label}</div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold">{t.label}</div>
+                          <div className="flex gap-2 items-center">
+                            <span className={tierBadge(t.tier)}>{tierLabel(t.tier)}</span>
+                            {t.vault ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
+                                vault
+                              </span>
+                            ) : (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-900/40">
+                                public
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-xs opacity-70 mt-1">{t.tag}</div>
                       </a>
                     );
-                  }
-                  return (
-                    <a
-                      key={t.id}
-                      href={`#${t.id}`}
-                      className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 px-4 py-3 hover:border-amber-400 transition"
-                      title={t.tag}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-semibold">{t.label}</div>
-                        <div className="flex gap-2 items-center">
-                          <span className={tierBadge(t.tier)}>{tierLabel(t.tier)}</span>
-                          {t.vault ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
-                              vault
-                            </span>
-                          ) : (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-900/40">
-                              public
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-xs opacity-70 mt-1">{t.tag}</div>
-                    </a>
-                  );
-                })}
-              </div>
-            </div>
-            {/* Groups */}
-            <div className="space-y-10">
-              {groupedPages.map((g) => (
-                <div key={g.key} id={`pkg-${g.key}`} className="scroll-mt-28">
-                  <HeaderCard
-                    kicker={g.kicker}
-                    title={g.title}
-                    subtitle={g.lead}
-                    rightChips={g.chips || []}
-                    align="center"
-                    className="mb-6"
-                  />
-                  <div className="grid grid-cols-1 gap-5">
-                    {g.pages.map((p) => {
-                      const vis = getPageVisibility(p);
-                      const tag = niceTypeLabel(p.page_type);
-                      const anchorId = `p-${p.id}`;
-                      const pageTier = getPageAccessTier(p);
-                      return (
-                        <div
-                          key={p.id}
-                          id={anchorId}
-                          className="scroll-mt-28 rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm p-6 md:p-8"
-                        >
-                          <div className="flex items-start justify-between gap-3 flex-wrap">
-                            <div>
-                              <div className="flex flex-wrap gap-2 items-center">
-                                <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">{tag}</div>
-                                <span className={tierBadge(pageTier)}>{tierLabel(pageTier)}</span>
-                                {vis === "vault" ? (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
-                                    vault
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-900/40">
-                                    public
-                                  </span>
-                                )}
-                              </div>
-                              <h3 className="text-2xl font-bold mt-2">{p.title || tag}</h3>
-                              {p.excerpt ? <div className="mt-2 text-sm opacity-80">{p.excerpt}</div> : null}
-                            </div>
-                            {p.hero_image_url || p.hero_video_url ? (
-                              <div className="flex gap-2">
-                                {p.hero_video_url ? (
-                                  <a
-                                    href={p.hero_video_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm"
-                                  >
-                                    Open Video →
-                                  </a>
-                                ) : null}
-                                {p.hero_image_url ? (
-                                  <a
-                                    href={p.hero_image_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="px-4 py-2 rounded-xl border border-gray-300 bg-white/70 dark:bg-gray-950/40 text-sm"
-                                  >
-                                    Open Image →
-                                  </a>
-                                ) : null}
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="mt-5">{renderPlainMarkdown(p.content_md)}</div>
-                          {/* ✅ per-page media rail from StudioPagesTab attachments */}
-                          <PageAttachmentsRail page={p} />
-                          <div className="mt-6 flex justify-end">
-                            <a href="#package" className="text-sm underline opacity-70 hover:opacity-100">
-                              Back to materials ↑
-                            </a>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  })}
                 </div>
-              ))}
-            </div>
+              </div>
+              {/* Groups */}
+              <div className="space-y-10">
+                {groupedPages.map((g) => (
+                  <div key={g.key} id={`pkg-${g.key}`} className="scroll-mt-28">
+                    <HeaderCard
+                      kicker={g.kicker}
+                      title={g.title}
+                      subtitle={g.lead}
+                      rightChips={g.chips || []}
+                      align="center"
+                      className="mb-6"
+                    />
+                    <div className="grid grid-cols-1 gap-5">
+                      {g.pages.map((p) => {
+                        const vis = getPageVisibility(p);
+                        const tag = niceTypeLabel(p.page_type);
+                        const anchorId = `p-${p.id}`;
+                        const pageTier = getPageAccessTier(p);
+                        return (
+                          <div
+                            key={p.id}
+                            id={anchorId}
+                            className="scroll-mt-28 rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm p-6 md:p-8"
+                          >
+                            <div className="flex items-start justify-between gap-3 flex-wrap">
+                              <div>
+                                <div className="flex flex-wrap gap-2 items-center">
+                                  <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">{tag}</div>
+                                  <span className={tierBadge(pageTier)}>{tierLabel(pageTier)}</span>
+                                  {vis === "vault" ? (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
+                                      vault
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-900/40">
+                                      public
+                                    </span>
+                                  )}
+                                </div>
+                                <h3 className="text-2xl font-bold mt-2">{p.title || tag}</h3>
+                                {p.excerpt ? <div className="mt-2 text-sm opacity-80">{p.excerpt}</div> : null}
+                              </div>
+                              {p.hero_image_url || p.hero_video_url ? (
+                                <div className="flex gap-2">
+                                  {p.hero_video_url ? (
+                                    <a
+                                      href={p.hero_video_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm"
+                                    >
+                                      Open Video →
+                                    </a>
+                                  ) : null}
+                                  {p.hero_image_url ? (
+                                    <a
+                                      href={p.hero_image_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-4 py-2 rounded-xl border border-gray-300 bg-white/70 dark:bg-gray-950/40 text-sm"
+                                    >
+                                      Open Image →
+                                    </a>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="mt-5">{renderPlainMarkdown(p.content_md)}</div>
+                            {/* ✅ per-page media rail from StudioPagesTab attachments */}
+                            <PageAttachmentsRail page={p} />
+                            <div className="mt-6 flex justify-end">
+                              <a href="#package" className="text-sm underline opacity-70 hover:opacity-100">
+                                Back to materials ↑
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </AccessGateCard>
           </section>
         </>
       ) : (
@@ -2415,6 +2424,7 @@ export default function StudioUniverse() {
               title="Priority Window materials are not visible"
               subtitle="Switch to ?tier=priority or set some pages to Public."
               universe={universe}
+              onCheckout={startStudioCheckout}
             />
             {/* ✅ NEW: still show what exists (titles only) */}
             <div className="mt-6">

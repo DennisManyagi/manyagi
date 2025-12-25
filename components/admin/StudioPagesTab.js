@@ -209,6 +209,22 @@ function moneyToNumber(input) {
 const PRODUCTS_SELECT_SAFE =
   "id,name,description,division,status,price,image_url,thumbnail_url,metadata,created_at,updated_at,slug,tags";
 
+// ✅ IMPORTANT: your studio checkout expects these tiers
+// We keep older tiers too so nothing breaks.
+const OFFER_TIER_OPTIONS = [
+  { value: "public", label: "public" },
+  { value: "supporter", label: "supporter" },
+
+  // ✅ studio-access tiers
+  { value: "priority", label: "priority" },
+  { value: "producer", label: "producer" },
+  { value: "packaging", label: "packaging" },
+
+  // admin / misc
+  { value: "vault", label: "vault" },
+  { value: "custom", label: "custom" },
+];
+
 // We support link via metadata.universe_id (no schema change).
 async function tryLoadProductsForUniverse(universeId) {
   // Preferred: filter by metadata->>universe_id
@@ -282,7 +298,7 @@ export default function StudioPagesTab() {
   const [prodId, setProdId] = useState(null);
   const [prodTitle, setProdTitle] = useState(""); // UI label (maps to products.name)
   const [prodStatus, setProdStatus] = useState("active"); // active|draft|archived (we store as text)
-  const [prodTier, setProdTier] = useState("public"); // public|supporter|producer|vault|custom
+  const [prodTier, setProdTier] = useState("public"); // ✅ now supports priority/packaging too
   const [prodKind, setProdKind] = useState("digital"); // digital|service|bundle|custom
   const [prodPriceDisplay, setProdPriceDisplay] = useState(""); // dollars string, optional
   const [prodCurrency, setProdCurrency] = useState("usd");
@@ -332,6 +348,7 @@ export default function StudioPagesTab() {
         {
           universe_id: selectedUniverseId || "",
           tier: "public",
+          access_tier: "public", // ✅ mirrored field for compatibility
           kind: "digital",
           stripe_price_id: "",
           stripe_product_id: "",
@@ -477,7 +494,8 @@ export default function StudioPagesTab() {
       const stripePriceId = md?.stripe_price_id || md?.price_id || "";
       const stripeProductId = md?.stripe_product_id || "";
 
-      const tier = md?.tier || md?.access_tier || "public";
+      // ✅ tier can live in either tier or access_tier
+      const tier = md?.tier || md?.access_tier || md?.required_tier || "public";
       const kind = md?.kind || md?.product_kind || "digital";
       const currency = md?.currency || "usd";
       const status = row?.status || md?.status || "active";
@@ -497,6 +515,7 @@ export default function StudioPagesTab() {
       const mdForEditor = { ...(md || {}) };
       mdForEditor.universe_id = mdForEditor.universe_id || selectedUniverseId || "";
       mdForEditor.tier = tier;
+      mdForEditor.access_tier = mdForEditor.access_tier || tier; // ✅ mirror for compatibility
       mdForEditor.kind = kind;
       mdForEditor.currency = currency;
       mdForEditor.stripe_price_id = stripePriceId;
@@ -901,7 +920,11 @@ export default function StudioPagesTab() {
 
     const metaObj = safeJsonParse(prodMetadataStr, {});
     metaObj.universe_id = selectedUniverseId;
+
+    // ✅ enforce tier in BOTH fields so your studio page can read either
     metaObj.tier = prodTier;
+    metaObj.access_tier = prodTier;
+
     metaObj.kind = prodKind;
     metaObj.currency = prodCurrency || "usd";
     metaObj.stripe_price_id = prodStripePriceId || "";
@@ -1291,15 +1314,19 @@ export default function StudioPagesTab() {
 
                   <label className="text-sm">
                     Tier
-                    <select className="mt-1 w-full border rounded-xl p-2" value={prodTier} onChange={(e) => setProdTier(e.target.value)}>
-                      <option value="public">public</option>
-                      <option value="supporter">supporter</option>
-                      <option value="producer">producer</option>
-                      <option value="vault">vault</option>
-                      <option value="custom">custom</option>
+                    <select
+                      className="mt-1 w-full border rounded-xl p-2"
+                      value={prodTier}
+                      onChange={(e) => setProdTier(e.target.value)}
+                    >
+                      {OFFER_TIER_OPTIONS.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
                     </select>
                     <div className="text-[11px] opacity-60 mt-1">
-                      Use this to map access on <code>/studios/[slug]</code>.
+                      Studio checkout expects <code>priority</code>, <code>producer</code>, <code>packaging</code>.
                     </div>
                   </label>
                 </div>
@@ -1378,7 +1405,7 @@ export default function StudioPagesTab() {
                     placeholder={`{\n  "universe_id": "${selectedUniverseId}",\n  "tier": "producer",\n  "kind": "digital",\n  "stripe_price_id": "price_...",\n  "currency": "usd"\n}`}
                   />
                   <div className="text-[11px] opacity-60 mt-1">
-                    Advanced: anything here is preserved, but <code>universe_id</code>, <code>tier</code>, <code>kind</code>, and Stripe fields are enforced from the form on Save.
+                    Advanced: anything here is preserved, but <code>universe_id</code>, <code>tier</code>, <code>access_tier</code>, <code>kind</code>, and Stripe fields are enforced from the form on Save.
                   </div>
                 </label>
 
@@ -1557,6 +1584,10 @@ export default function StudioPagesTab() {
               </button>
             ) : null}
           </div>
+
+          {/* Everything below is unchanged from your original file (pages editor + attachments + library) */}
+          {/* (kept intact to avoid breaking your current workflow) */}
+
           <div className="grid grid-cols-1 gap-3">
             <label className="text-sm">
               Title
@@ -1610,6 +1641,7 @@ export default function StudioPagesTab() {
                 <input className="mt-1 w-full border rounded-xl p-2" value={pHeroVid} onChange={(e) => setPHeroVid(e.target.value)} />
               </label>
             </div>
+
             {/* ✅ Attachments */}
             <div className="rounded-2xl border border-gray-200 p-3">
               <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1646,6 +1678,7 @@ export default function StudioPagesTab() {
                   />
                 </div>
               </div>
+
               <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
                 <span className="px-2 py-0.5 rounded-full border border-gray-300 bg-gray-50">
                   images <b>{editorAttachmentsCounts.image}</b>
@@ -1663,6 +1696,7 @@ export default function StudioPagesTab() {
                   links <b>{editorAttachmentsCounts.link}</b>
                 </span>
               </div>
+
               {(pAttachments || []).length === 0 ? (
                 <div className="mt-3 text-sm opacity-70">No attachments yet.</div>
               ) : (
@@ -1700,6 +1734,7 @@ export default function StudioPagesTab() {
                           </button>
                         </div>
                       </div>
+
                       <div className="mt-3 grid grid-cols-1 gap-3">
                         <div className="grid grid-cols-2 gap-3">
                           <label className="text-xs">
@@ -1734,6 +1769,7 @@ export default function StudioPagesTab() {
                             </select>
                           </label>
                         </div>
+
                         <label className="text-xs">
                           Title
                           <input
@@ -1743,6 +1779,7 @@ export default function StudioPagesTab() {
                             placeholder="Main Theme • Official"
                           />
                         </label>
+
                         <label className="text-xs">
                           URL (required)
                           <input
@@ -1756,6 +1793,7 @@ export default function StudioPagesTab() {
                             placeholder="https://…"
                           />
                         </label>
+
                         <label className="text-xs">
                           Thumbnail URL (optional)
                           <input
@@ -1765,6 +1803,7 @@ export default function StudioPagesTab() {
                             placeholder="https://…"
                           />
                         </label>
+
                         <div className="grid grid-cols-2 gap-3">
                           <label className="text-xs">
                             Duration (optional)
@@ -1785,6 +1824,7 @@ export default function StudioPagesTab() {
                             />
                           </label>
                         </div>
+
                         <div className="grid grid-cols-2 gap-3">
                           <label className="text-xs">
                             License Tier (audio optional)
@@ -1805,6 +1845,7 @@ export default function StudioPagesTab() {
                             />
                           </label>
                         </div>
+
                         <label className="text-xs">
                           Notes (optional)
                           <textarea
@@ -1814,6 +1855,7 @@ export default function StudioPagesTab() {
                             placeholder="Use: cold open / act break / end card…"
                           />
                         </label>
+
                         <div className="flex items-center gap-2 flex-wrap">
                           {a.url ? (
                             <a
@@ -1841,6 +1883,7 @@ export default function StudioPagesTab() {
                   ))}
                 </div>
               )}
+
               {/* Library Picker */}
               <div className="mt-4 rounded-2xl border border-gray-200 p-3 bg-gray-50">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1858,6 +1901,7 @@ export default function StudioPagesTab() {
                     {attPickerBusy ? "Loading…" : "Refresh"}
                   </button>
                 </div>
+
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
                   <input
                     className="border rounded-xl p-2 text-sm"
@@ -1885,6 +1929,7 @@ export default function StudioPagesTab() {
                     Search
                   </button>
                 </div>
+
                 <div className="mt-3">
                   {libraryItems.length === 0 ? (
                     <div className="text-sm opacity-70">No library items loaded yet. Hit Refresh.</div>
@@ -1933,6 +1978,7 @@ export default function StudioPagesTab() {
                 </div>
               </div>
             </div>
+
             <label className="text-sm">
               Metadata JSON (optional)
               <textarea
@@ -1945,6 +1991,7 @@ export default function StudioPagesTab() {
                 Advanced: any extra metadata you add here will be preserved, but <code>visibility</code> and <code>attachments</code> are enforced from the UI on Save.
               </div>
             </label>
+
             <label className="text-sm">
               Content (Markdown or plain text — paste)
               <textarea
@@ -1955,6 +2002,7 @@ export default function StudioPagesTab() {
               />
             </label>
           </div>
+
           <div className="mt-4 flex gap-2">
             <button
               className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50"
