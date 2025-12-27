@@ -7,16 +7,67 @@ import Hero from "@/components/Hero";
 import Card from "@/components/Card";
 import SectionIntro from "@/components/SectionIntro";
 import { supabase } from "@/lib/supabase";
+/* ------------------------------
+   Publishing helpers (Books)
+--------------------------------*/
+const asList = (v) => (Array.isArray(v) ? v : Array.isArray(v?.items) ? v.items : []);
 
+const pickProductImage = (p) =>
+  p?.thumbnail_url ||
+  p?.display_image ||
+  p?.image_url ||
+  p?.image ||
+  "/placeholder.png";
+
+/**
+ * Offers have tier/access_tier/required_tier in metadata.
+ * Books do NOT.
+ */
+const isStudioOfferProduct = (p) => {
+  const m = p?.metadata || {};
+  const tier = m?.tier ?? m?.access_tier ?? m?.required_tier;
+  return tier !== undefined && tier !== null && String(tier).trim() !== "";
+};
+
+const isBookProduct = (p) => !isStudioOfferProduct(p);
+
+function matchesUniverseForProduct(product, universe) {
+  if (!product || !universe) return false;
+  const m = product.metadata || {};
+  const uid = safeStr(m.universe_id);
+  if (uid && safeStr(universe.id) && uid === safeStr(universe.id)) return true;
+
+  const title = safeStr(universe.title).toLowerCase();
+  const slug = safeStr(universe.slug).toLowerCase();
+
+  const fields = [
+    safeStr(m.universe).toLowerCase(),
+    safeStr(m.book).toLowerCase(),
+    safeStr(m.series).toLowerCase(),
+    safeStr(m.ip).toLowerCase(),
+    safeStr(m.franchise).toLowerCase(),
+  ].filter(Boolean);
+
+  if (!fields.length) return false;
+
+  // exact hits
+  if (title && fields.includes(title)) return true;
+  if (slug && fields.includes(slug)) return true;
+
+  // soft contains
+  const hay = fields.join(" ");
+  if (title && hay.includes(title)) return true;
+  if (slug && hay.includes(slug)) return true;
+
+  return false;
+}
 /* ------------------------------
    Small helpers (safe string/json)
 --------------------------------*/
 const asStr = (v) => (v === null || v === undefined ? "" : String(v));
-
 function safeStr(v) {
   return String(v ?? "").trim();
 }
-
 function safeJson(v, fallback = {}) {
   try {
     if (!v) return fallback;
@@ -27,7 +78,6 @@ function safeJson(v, fallback = {}) {
     return fallback;
   }
 }
-
 function safeMeta(meta) {
   if (!meta) return {};
   if (typeof meta === "object") return meta;
@@ -41,7 +91,6 @@ function safeMeta(meta) {
   }
   return {};
 }
-
 /* ------------------------------
    URL + platform helpers
 --------------------------------*/
@@ -49,7 +98,6 @@ function isDirectAudio(url) {
   const u = (url || "").toLowerCase().split("?")[0];
   return u.endsWith(".mp3") || u.endsWith(".wav") || u.endsWith(".m4a") || u.endsWith(".ogg");
 }
-
 function inferPlatform(url) {
   if (!url) return "";
   const u = url.toLowerCase();
@@ -63,12 +111,10 @@ function inferPlatform(url) {
   if (u.includes("suno")) return "Suno";
   return "";
 }
-
 function isYoutube(url = "") {
   const u = String(url || "");
   return u.includes("youtube.com") || u.includes("youtu.be");
 }
-
 function getYoutubeId(url = "") {
   const u = String(url || "");
   const youtuBe = u.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
@@ -79,7 +125,6 @@ function getYoutubeId(url = "") {
   if (embed?.[1]) return embed[1];
   return null;
 }
-
 function YoutubeEmbed({ url, title = "Video" }) {
   const id = getYoutubeId(url);
   if (!id) return null;
@@ -95,7 +140,6 @@ function YoutubeEmbed({ url, title = "Video" }) {
     </div>
   );
 }
-
 function SpotifyEmbed({ url, title = "Spotify" }) {
   if (!url || !String(url).includes("spotify.com")) return null;
   const embedUrl = String(url).replace("open.spotify.com/", "open.spotify.com/embed/");
@@ -112,7 +156,6 @@ function SpotifyEmbed({ url, title = "Spotify" }) {
     </div>
   );
 }
-
 function chip(text) {
   return (
     <span className="text-[11px] px-3 py-1 rounded-full bg-white/80 text-gray-800 border border-gray-200/70 dark:bg-gray-900/60 dark:text-gray-100 dark:border-gray-700">
@@ -120,7 +163,6 @@ function chip(text) {
     </span>
   );
 }
-
 /* ------------------------------
    Media type helpers
 --------------------------------*/
@@ -134,7 +176,6 @@ function normalizeType(t) {
   if (v === "battle_theme") return "score";
   return v || "other";
 }
-
 function prettyType(t) {
   const v = normalizeType(t);
   const map = {
@@ -154,7 +195,6 @@ function prettyType(t) {
   };
   return map[v] || "Media";
 }
-
 function primaryCta(item) {
   const t = normalizeType(item.media_type);
   if (t === "soundtrack" || t === "score" || t === "chapter_read" || t === "audiobook") return "Play";
@@ -162,7 +202,6 @@ function primaryCta(item) {
   if (t === "playlist") return "Open Playlist";
   return "View";
 }
-
 function pickCardImage(post, meta) {
   return (
     meta?.thumbnail_url ||
@@ -173,7 +212,6 @@ function pickCardImage(post, meta) {
     "/placeholder.png"
   );
 }
-
 function bestUrl(meta, post) {
   const audio = asStr(meta?.audio_url).trim();
   const media = asStr(meta?.media_url).trim();
@@ -184,7 +222,6 @@ function bestUrl(meta, post) {
     media_url: media || media2 || "",
   };
 }
-
 function pickIp(meta) {
   return (
     asStr(meta?.book).trim() ||
@@ -195,7 +232,6 @@ function pickIp(meta) {
     ""
   );
 }
-
 /* ------------------------------
    Asset helpers
 --------------------------------*/
@@ -211,7 +247,6 @@ function getAssetUrl(a) {
     ""
   );
 }
-
 function getThumb(a) {
   return (
     a?.thumbnail_url ||
@@ -222,7 +257,6 @@ function getThumb(a) {
     ""
   );
 }
-
 function guessFileType(url = "") {
   const u = safeStr(url).toLowerCase();
   if (!u) return "";
@@ -238,7 +272,6 @@ function guessFileType(url = "") {
   if (q.endsWith(".png") || q.endsWith(".jpg") || q.endsWith(".jpeg") || q.endsWith(".webp")) return "image";
   return "";
 }
-
 function guessAttachmentKind(url = "") {
   const u = safeStr(url).toLowerCase();
   if (!u) return "link";
@@ -251,7 +284,6 @@ function guessAttachmentKind(url = "") {
   if (["mp3", "wav", "m4a", "ogg"].includes(ft)) return "audio";
   return "link";
 }
-
 /* ------------------------------
    Attachments (studio pages)
 --------------------------------*/
@@ -264,7 +296,6 @@ function normalizeTags(input) {
     .map((x) => safeStr(x))
     .filter(Boolean);
 }
-
 function normalizeAttachment(a) {
   const base = a && typeof a === "object" ? a : {};
   const url = safeStr(base.url || base.file_url || base.external_url);
@@ -291,13 +322,11 @@ function normalizeAttachment(a) {
     notes,
   };
 }
-
 function getPageAttachments(page) {
   const md = safeJson(page?.metadata, {});
   const arr = Array.isArray(md?.attachments) ? md.attachments : [];
   return arr.map(normalizeAttachment).filter((x) => x && (x.url || x.thumbnail_url));
 }
-
 function niceAttachmentTypeLabel(media_type = "") {
   const t = safeStr(media_type).toLowerCase();
   const m = {
@@ -312,7 +341,6 @@ function niceAttachmentTypeLabel(media_type = "") {
   };
   return m[t] || "Attachment";
 }
-
 function renderPlainMarkdown(md = "") {
   const text = String(md || "");
   const lines = text.split("\n");
@@ -344,7 +372,6 @@ function renderPlainMarkdown(md = "") {
     </div>
   );
 }
-
 /* ------------------------------
    UI cards
 --------------------------------*/
@@ -375,7 +402,6 @@ function HeaderCard({ kicker, title, subtitle, rightChips = [], align = "left", 
     </div>
   );
 }
-
 function AudioCard({ a }) {
   const url = a?.audio_url || a?.media_url || getAssetUrl(a);
   const thumb = a?.card_img || getThumb(a);
@@ -477,7 +503,6 @@ function AudioCard({ a }) {
     </div>
   );
 }
-
 function AttachmentCard({ att }) {
   const url = safeStr(att?.url);
   const thumb = safeStr(att?.thumbnail_url);
@@ -590,7 +615,6 @@ function AttachmentCard({ att }) {
     </div>
   );
 }
-
 function PageAttachmentsRail({ page }) {
   const attachments = useMemo(() => getPageAttachments(page), [page]);
   if (!attachments.length) return null;
@@ -634,27 +658,22 @@ function PageAttachmentsRail({ page }) {
     </div>
   );
 }
-
 /* ------------------------------
    ACCESS / TIERS (FIXED)
    ✅ This is what caused: ReferenceError: tierLabel is not defined
 --------------------------------*/
 const ACCESS_TIERS = ["public", "priority", "producer", "packaging"];
-
 function normalizeTier(t) {
   const v = safeStr(t).toLowerCase();
   if (ACCESS_TIERS.includes(v)) return v;
   return "public";
 }
-
 const TIER_RANK = { public: 0, priority: 1, producer: 2, packaging: 3 };
-
 function canViewTier(viewerTier, pageTier) {
   const vt = TIER_RANK[normalizeTier(viewerTier)] ?? 0;
   const pt = TIER_RANK[normalizeTier(pageTier)] ?? 0;
   return vt >= pt;
 }
-
 function tierLabel(t) {
   const v = normalizeTier(t);
   const map = {
@@ -665,7 +684,6 @@ function tierLabel(t) {
   };
   return map[v] || "Public";
 }
-
 /* ------------------------------
    Page tier logic
 --------------------------------*/
@@ -698,13 +716,11 @@ const PAGE_TYPE_DEFAULT_TIER = {
   option_term_sheet_producer_packet: "packaging",
   negotiation: "packaging",
 };
-
 function getPageVisibility(p) {
   const md = safeJson(p?.metadata, {});
   const v = String(md?.visibility || "public").toLowerCase();
   return v === "vault" ? "vault" : "public";
 }
-
 function getPageAccessTier(p) {
   const md = safeJson(p?.metadata, {});
   const explicit = normalizeTier(md?.access_tier);
@@ -713,7 +729,6 @@ function getPageAccessTier(p) {
   const t = safeStr(p?.page_type);
   return normalizeTier(PAGE_TYPE_DEFAULT_TIER[t] || "public");
 }
-
 function tierBadge(t) {
   const v = normalizeTier(t);
   const map = {
@@ -728,7 +743,6 @@ function tierBadge(t) {
   };
   return map[v] || map.public;
 }
-
 function niceTypeLabel(t = "") {
   const m = {
     pitch_1p: "Pitch (1 Page)",
@@ -753,7 +767,6 @@ function niceTypeLabel(t = "") {
   };
   return m[t] || String(t).replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
-
 /* ------------------------------
    Access gating UI
 --------------------------------*/
@@ -784,7 +797,6 @@ function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, o
     </div>
   );
 }
-
 function PackagesBar({ universe, viewerTier, showVault, onCheckout }) {
   const tiers = [
     {
@@ -897,7 +909,6 @@ function PackagesBar({ universe, viewerTier, showVault, onCheckout }) {
     </div>
   );
 }
-
 /* ------------------------------
    Package grouping
 --------------------------------*/
@@ -928,7 +939,6 @@ const REQUIRED_25_PAGE_TYPES = [
   "chain_of_title_rights_matrix",
   "option_term_sheet_producer_packet",
 ];
-
 const EXEC_GROUPS = [
   {
     key: "executive",
@@ -979,13 +989,11 @@ const EXEC_GROUPS = [
     types: new Set(["chain_of_title_rights_matrix", "option_term_sheet_producer_packet", "negotiation", "press_kit", "roadmap", "prompts", "deck_copy"]),
   },
 ];
-
 function packageProgress(pages = []) {
   const present = new Set(pages.map((p) => safeStr(p.page_type)).filter(Boolean));
   const have = REQUIRED_25_PAGE_TYPES.filter((t) => present.has(t));
   return { count: have.length, total: REQUIRED_25_PAGE_TYPES.length };
 }
-
 function groupStudioPages(pages = [], showVault = false, viewerTier = "public") {
   const visible = pages.filter((p) => {
     const vis = getPageVisibility(p);
@@ -994,10 +1002,8 @@ function groupStudioPages(pages = [], showVault = false, viewerTier = "public") 
     if (!canViewTier(viewerTier, pageTier)) return false;
     return true;
   });
-
   const buckets = EXEC_GROUPS.map((g) => ({ ...g, pages: [] }));
   const used = new Set();
-
   visible.forEach((p) => {
     const t = safeStr(p.page_type);
     const g = buckets.find((x) => x.types.has(t));
@@ -1006,7 +1012,6 @@ function groupStudioPages(pages = [], showVault = false, viewerTier = "public") 
       used.add(p.id);
     }
   });
-
   const appendix = visible.filter((p) => !used.has(p.id));
   if (appendix.length) {
     buckets.splice(1, 0, {
@@ -1019,7 +1024,6 @@ function groupStudioPages(pages = [], showVault = false, viewerTier = "public") 
       pages: appendix,
     });
   }
-
   buckets.forEach((b) => {
     b.pages.sort((a, c) => {
       const ao = Number(a.sort_order ?? 9999);
@@ -1030,10 +1034,8 @@ function groupStudioPages(pages = [], showVault = false, viewerTier = "public") 
       return cd - ad;
     });
   });
-
   return buckets.filter((b) => b.pages.length > 0);
 }
-
 function LockedSectionsPreview({ universe, pages = [], viewerTier = "public", showVault = false }) {
   const locked = useMemo(() => {
     const lockedByTier = [];
@@ -1052,7 +1054,6 @@ function LockedSectionsPreview({ universe, pages = [], viewerTier = "public", sh
         return;
       }
     });
-
     const sortFn = (a, b) => {
       const ar = TIER_RANK[normalizeTier(a.requiredTier)] ?? 0;
       const br = TIER_RANK[normalizeTier(b.requiredTier)] ?? 0;
@@ -1064,15 +1065,12 @@ function LockedSectionsPreview({ universe, pages = [], viewerTier = "public", sh
       const bd = new Date(b.p?.updated_at || 0).getTime();
       return bd - ad;
     };
-
     lockedByTier.sort(sortFn);
     lockedByVault.sort(sortFn);
     return { lockedByTier, lockedByVault };
   }, [pages, viewerTier, showVault]);
-
   const totalLocked = (locked.lockedByTier?.length || 0) + (locked.lockedByVault?.length || 0);
   if (!totalLocked) return null;
-
   return (
     <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8 mb-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -1113,7 +1111,6 @@ function LockedSectionsPreview({ universe, pages = [], viewerTier = "public", sh
           </div>
         </div>
       </div>
-
       {locked.lockedByTier.length ? (
         <div className="mt-6">
           <div className="text-sm font-semibold mb-3">Tier-locked pages</div>
@@ -1143,7 +1140,6 @@ function LockedSectionsPreview({ universe, pages = [], viewerTier = "public", sh
           </div>
         </div>
       ) : null}
-
       {locked.lockedByVault.length ? (
         <div className="mt-8">
           <div className="text-sm font-semibold mb-3">Vault-hidden pages</div>
@@ -1174,7 +1170,6 @@ function LockedSectionsPreview({ universe, pages = [], viewerTier = "public", sh
     </div>
   );
 }
-
 /* ------------------------------
    Media normalization
 --------------------------------*/
@@ -1186,7 +1181,6 @@ function normalizeApiList(json) {
   if (json && Array.isArray(json.items)) return json.items;
   return [];
 }
-
 function normalizeMediaPosts(raw) {
   const list = (raw || [])
     .map((p) => {
@@ -1219,11 +1213,9 @@ function normalizeMediaPosts(raw) {
       };
     })
     .filter((it) => !!asStr(it.audio_url).trim() || !!asStr(it.media_url).trim());
-
   list.sort((a, b) => new Date(b.created_at || b.updated_at || 0) - new Date(a.created_at || a.updated_at || 0));
   return list;
 }
-
 function matchesUniverseIp(item, universe) {
   if (!item || !universe) return false;
   const ip = safeStr(item.ip).toLowerCase();
@@ -1235,7 +1227,6 @@ function matchesUniverseIp(item, universe) {
   const ms = safeStr(m.series).toLowerCase();
   const mip = safeStr(m.ip).toLowerCase();
   const mf = safeStr(m.franchise).toLowerCase();
-
   if (ip && title && ip === title) return true;
   if (ip && slug && ip === slug) return true;
   if (mu && title && mu === title) return true;
@@ -1248,13 +1239,11 @@ function matchesUniverseIp(item, universe) {
   if (mip && slug && mip === slug) return true;
   if (mf && title && mf === title) return true;
   if (mf && slug && mf === slug) return true;
-
   const hay = [ip, mu, mb, ms, mip, mf].filter(Boolean).join(" ");
   if (title && hay.includes(title)) return true;
   if (slug && hay.includes(slug)) return true;
   return false;
 }
-
 function getPlaysScore(item) {
   const m = item?.metadata || {};
   const candidates = [
@@ -1274,19 +1263,16 @@ function getPlaysScore(item) {
   if (!candidates.length) return 0;
   return Math.max(...candidates);
 }
-
 function getRecencyTs(item) {
   const t = item?.updated_at || item?.created_at || item?.metadata?.updated_at || item?.metadata?.created_at || 0;
   const ts = new Date(t || 0).getTime();
   return Number.isFinite(ts) ? ts : 0;
 }
-
 function pickSoundtrackCandidate({ mediaPosts = [], audioItems = [] }) {
   const playlist = (mediaPosts || []).find(
     (it) => normalizeType(it.media_type) === "playlist" && safeStr(it.media_url || it.audio_url)
   );
   if (playlist) return { kind: "playlist", item: playlist };
-
   const candidates = (audioItems || []).filter((it) => {
     const t = normalizeType(it.media_type);
     const url = safeStr(it.media_url || it.audio_url);
@@ -1300,9 +1286,7 @@ function pickSoundtrackCandidate({ mediaPosts = [], audioItems = [] }) {
       url.includes("soundcloud.com")
     );
   });
-
   if (!candidates.length) return null;
-
   const sorted = candidates
     .slice()
     .sort((a, b) => {
@@ -1311,20 +1295,16 @@ function pickSoundtrackCandidate({ mediaPosts = [], audioItems = [] }) {
       if (bp !== ap) return bp - ap;
       return getRecencyTs(b) - getRecencyTs(a);
     });
-
   return { kind: "auto", item: sorted[0] };
 }
-
 /* =========================================================
    PAGE COMPONENT
 ========================================================= */
 export default function StudioUniverse() {
   const router = useRouter();
   const { slug } = router.query;
-
   const showVault = useMemo(() => String(router.query?.vault || "") === "1", [router.query?.vault]);
   const requestedTier = useMemo(() => normalizeTier(router.query?.tier), [router.query?.tier]);
-
   const [viewerTier, setViewerTier] = useState("public");
   const [universe, setUniverse] = useState(null);
   const [assets, setAssets] = useState([]);
@@ -1332,25 +1312,20 @@ export default function StudioUniverse() {
   const [mediaPosts, setMediaPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tierProducts, setTierProducts] = useState({});
-
+  const [bookProducts, setBookProducts] = useState([]);
   // Keep URL tier in sync as a default (entitlements can override later)
   useEffect(() => {
     setViewerTier(requestedTier || "public");
   }, [requestedTier]);
-
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
-
     (async () => {
       setLoading(true);
-
       const { data: u, error: uErr } = await supabase.from("universes").select("*").eq("slug", slug).maybeSingle();
       if (uErr) console.error(uErr);
       if (cancelled) return;
-
       setUniverse(u || null);
-
       if (!u?.id) {
         setAssets([]);
         setStudioPages([]);
@@ -1358,7 +1333,6 @@ export default function StudioUniverse() {
         setLoading(false);
         return;
       }
-
       const [{ data: a, error: aErr }, { data: pages, error: pErr }] = await Promise.all([
         supabase
           .from("universe_assets")
@@ -1375,14 +1349,11 @@ export default function StudioUniverse() {
           .order("sort_order", { ascending: true })
           .order("updated_at", { ascending: false }),
       ]);
-
       if (aErr) console.error(aErr);
       if (pErr) console.error(pErr);
       if (cancelled) return;
-
       setAssets(a || []);
       setStudioPages(pages || []);
-
       try {
         const res = await fetch("/api/posts?division=media");
         const json = await res.json();
@@ -1394,9 +1365,7 @@ export default function StudioUniverse() {
         console.error("studio media fetch error:", err);
         setMediaPosts([]);
       }
-
       setLoading(false);
-
       // entitlement lookup overrides viewerTier
       try {
         const { data: auth } = await supabase.auth.getUser();
@@ -1409,28 +1378,23 @@ export default function StudioUniverse() {
             .eq("universe_id", u.id)
             .eq("status", "active")
             .order("created_at", { ascending: false });
-
           let best = "public";
           (ent || []).forEach((e) => {
             const t = normalizeTier(e.tier);
             if ((TIER_RANK[t] ?? 0) > (TIER_RANK[best] ?? 0)) best = t;
           });
-
           setViewerTier(best);
         }
       } catch (e) {
         console.warn("entitlement lookup failed", e);
       }
     })();
-
     return () => {
       cancelled = true;
     };
   }, [slug]);
-
   useEffect(() => {
     if (!universe?.id) return;
-
     async function loadTierProducts() {
       const { data: products } = await supabase
         .from("products")
@@ -1438,7 +1402,6 @@ export default function StudioUniverse() {
         .eq("status", "active")
         .filter("metadata->>universe_id", "eq", universe.id)
         .filter("metadata->>kind", "eq", "digital");
-
       const map = {};
       (products || []).forEach((p) => {
         const meta = safeJson(p.metadata);
@@ -1447,17 +1410,50 @@ export default function StudioUniverse() {
       });
       setTierProducts(map);
     }
-
     loadTierProducts();
   }, [universe?.id]);
+  useEffect(() => {
+    if (!universe?.id) return;
+    let cancelled = false;
 
+    (async () => {
+      try {
+        // Pull all publishing products from your existing API
+        const res = await fetch("/api/products?division=publishing");
+        const json = await res.json();
+
+        const all = asList(json).map((p) => {
+          const meta = safeJson(p.metadata, {});
+          return {
+            ...p,
+            metadata: meta,
+            display_image: pickProductImage(p),
+          };
+        });
+
+        // books only (exclude studio offers)
+        const books = all.filter(isBookProduct);
+
+        // scope to this universe
+        const scoped = books.filter((p) => matchesUniverseForProduct(p, universe));
+
+        if (!cancelled) setBookProducts(scoped);
+      } catch (e) {
+        console.error("studio books fetch error:", e);
+        if (!cancelled) setBookProducts([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [universe?.id, universe?.slug, universe?.title]);
   const heroImages = useMemo(() => {
     const thumbs = assets.map((x) => getThumb(x)).filter(Boolean).slice(0, 6);
     if (thumbs.length) return thumbs;
     if (universe?.cover_image_url) return [universe.cover_image_url];
     return ["/images/og-home.webp"];
   }, [assets, universe]);
-
   const trailerAsset = useMemo(() => {
     return (
       assets.find((x) => safeStr(x.asset_type).toLowerCase() === "trailer") ||
@@ -1467,11 +1463,9 @@ export default function StudioUniverse() {
       null
     );
   }, [assets]);
-
   const trailerUrl = useMemo(() => {
     return getAssetUrl(trailerAsset) || universe?.hero_video_url || null;
   }, [trailerAsset, universe]);
-
   const worldMapAssets = useMemo(() => {
     return assets
       .filter(
@@ -1481,13 +1475,10 @@ export default function StudioUniverse() {
       )
       .filter((a) => getThumb(a) || a.external_url);
   }, [assets]);
-
   const featuredWorldMapUrl = useMemo(() => universe?.world_map_url || null, [universe]);
-
   const hasWorldMapSection = useMemo(() => {
     return worldMapAssets.length > 0 || Boolean(featuredWorldMapUrl);
   }, [worldMapAssets.length, featuredWorldMapUrl]);
-
   const visualAssetsRaw = useMemo(() => {
     return assets.filter((a) => {
       const t = safeStr(a.asset_type).toLowerCase();
@@ -1501,7 +1492,6 @@ export default function StudioUniverse() {
       return ["image", "art", "still", "poster", "cover"].includes(t) || div === "designs" || ft === "image" || kind === "visual";
     });
   }, [assets]);
-
   const merchAssets = useMemo(() => {
     const isMerch = (a) => {
       const t = safeStr(a.asset_type).toLowerCase();
@@ -1523,7 +1513,6 @@ export default function StudioUniverse() {
     };
     return visualAssetsRaw.filter(isMerch);
   }, [visualAssetsRaw]);
-
   const characterAssets = useMemo(() => {
     return assets.filter((a) => {
       const t = safeStr(a.asset_type).toLowerCase();
@@ -1531,7 +1520,6 @@ export default function StudioUniverse() {
       return t === "character" || kind === "character";
     });
   }, [assets]);
-
   const audioItems = useMemo(() => {
     const isAudioLike = (it) => {
       const t = normalizeType(it.media_type);
@@ -1541,12 +1529,10 @@ export default function StudioUniverse() {
     };
     return (mediaPosts || []).filter(isAudioLike);
   }, [mediaPosts]);
-
   const soundtrackFromPosts = useMemo(() => {
     const pick = (mediaPosts || []).find((it) => normalizeType(it.media_type) === "playlist");
     return pick || null;
   }, [mediaPosts]);
-
   const soundtrackUrl = useMemo(() => {
     if (soundtrackFromPosts) return safeStr(soundtrackFromPosts.media_url || soundtrackFromPosts.audio_url);
     const fallbackAsset =
@@ -1563,11 +1549,9 @@ export default function StudioUniverse() {
       ""
     );
   }, [soundtrackFromPosts, assets]);
-
   const soundtrackCandidate = useMemo(() => {
     return pickSoundtrackCandidate({ mediaPosts, audioItems });
   }, [mediaPosts, audioItems]);
-
   const soundtrackResolved = useMemo(() => {
     if (safeStr(soundtrackUrl)) {
       return {
@@ -1588,7 +1572,6 @@ export default function StudioUniverse() {
     }
     return null;
   }, [soundtrackUrl, soundtrackFromPosts, soundtrackCandidate]);
-
   const producerPacket = useMemo(() => {
     return (
       assets.find(
@@ -1596,11 +1579,9 @@ export default function StudioUniverse() {
       ) || null
     );
   }, [assets]);
-
   const nftAssets = useMemo(() => {
     return assets.filter((a) => safeStr(a.asset_type).toLowerCase() === "nft" || a?.metadata?.nft_url);
   }, [assets]);
-
   const producerEmailHref = useMemo(() => {
     if (!universe?.title || !universe?.slug) return "mailto:studios@manyagi.net";
     const subject = `Option / Licensing Inquiry — ${universe.title}`;
@@ -1610,7 +1591,6 @@ export default function StudioUniverse() {
       `Company:\nRole:\nBudget Range:\nTimeline:\nWhat are you looking to option?\nNotes:\n`;
     return `mailto:studios@manyagi.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   }, [universe]);
-
   const quickSignals = useMemo(() => {
     const signals = [];
     if (trailerUrl) signals.push("Trailer Ready");
@@ -1636,12 +1616,10 @@ export default function StudioUniverse() {
     showVault,
     viewerTier,
   ]);
-
   const canonicalUrl = useMemo(() => {
     if (!universe?.slug) return "";
     return `https://manyagi.net/studios/${universe.slug}`;
   }, [universe]);
-
   const jsonLd = useMemo(() => {
     if (!universe?.title) return null;
     return {
@@ -1654,10 +1632,8 @@ export default function StudioUniverse() {
       publisher: { "@type": "Organization", name: "Manyagi Studios" },
     };
   }, [universe, canonicalUrl]);
-
   const groupedPages = useMemo(() => groupStudioPages(studioPages, showVault, viewerTier), [studioPages, showVault, viewerTier]);
   const packageBar = useMemo(() => packageProgress(studioPages), [studioPages]);
-
   const studioToc = useMemo(() => {
     const toc = [];
     groupedPages.forEach((g) => {
@@ -1676,7 +1652,6 @@ export default function StudioUniverse() {
     });
     return toc;
   }, [groupedPages]);
-
   async function startStudioCheckout(tier) {
     try {
       const { data: auth } = await supabase.auth.getSession();
@@ -1702,7 +1677,6 @@ export default function StudioUniverse() {
       alert(e.message || "Checkout failed");
     }
   }
-
   if (loading) {
     return (
       <section className="container mx-auto px-4 py-16">
@@ -1710,7 +1684,6 @@ export default function StudioUniverse() {
       </section>
     );
   }
-
   if (!universe) {
     return (
       <section className="container mx-auto px-4 py-16">
@@ -1721,24 +1694,24 @@ export default function StudioUniverse() {
       </section>
     );
   }
-
   const navItems = [
     { href: "#one-sheet", label: "One-Sheet" },
     ...(trailerUrl ? [{ href: "#trailer", label: "Trailer" }] : []),
     ...(audioItems.length || soundtrackResolved ? [{ href: "#audio", label: "Sound" }] : []),
     ...(characterAssets.length ? [{ href: "#characters", label: "Characters" }] : []),
     ...(hasWorldMapSection ? [{ href: "#world-map", label: "World Map" }] : []),
+
+    ...(bookProducts.length ? [{ href: "#books", label: "Books" }] : []),
+
     { href: "#visuals", label: "Merch" },
     { href: "#vault", label: "Adaptation Assets" },
     ...(groupedPages.length ? [{ href: "#package", label: "Producer Materials" }] : []),
     { href: "#contact", label: "Options" },
   ];
-
   const resolvedSoundtrackUrl = soundtrackResolved?.url || "";
   const isSoundtrackSpotify = resolvedSoundtrackUrl.includes("spotify.com");
   const isSoundtrackYT = isYoutube(resolvedSoundtrackUrl);
   const isSoundtrackAudioFile = ["mp3", "wav", "m4a", "ogg"].includes(guessFileType(resolvedSoundtrackUrl));
-
   return (
     <>
       <Head>
@@ -1756,7 +1729,6 @@ export default function StudioUniverse() {
         {heroImages?.[0] ? <meta name="twitter:image" content={heroImages[0]} /> : null}
         {jsonLd ? <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} /> : null}
       </Head>
-
       <Hero
         kicker="Manyagi Studios"
         title={universe.title}
@@ -1770,7 +1742,6 @@ export default function StudioUniverse() {
               ▶ Watch Trailer
             </a>
           ) : null}
-
           {audioItems.length || soundtrackResolved ? (
             <a
               href="#audio"
@@ -1779,7 +1750,6 @@ export default function StudioUniverse() {
               🎧 Listen
             </a>
           ) : null}
-
           {groupedPages.length ? (
             <a
               href="#package"
@@ -1788,18 +1758,15 @@ export default function StudioUniverse() {
               📦 Producer Materials
             </a>
           ) : null}
-
           <a
             href="#vault"
             className="btn bg-white/90 text-gray-900 border border-gray-200 py-2 px-4 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
           >
             View Adaptation Assets
           </a>
-
           <a href={producerEmailHref} className="btn bg-amber-200 text-amber-950 py-2 px-4 rounded hover:bg-amber-300 transition">
             💼 Options / Licensing
           </a>
-
           <Link
             href={showVault ? `/studios/${universe.slug}?tier=${viewerTier}` : `/studios/${universe.slug}?vault=1&tier=${viewerTier}`}
             className="btn bg-white/90 text-gray-900 border border-gray-200 py-2 px-4 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
@@ -1808,7 +1775,6 @@ export default function StudioUniverse() {
           </Link>
         </div>
       </Hero>
-
       <section className="container mx-auto px-4 -mt-8 mb-10">
         <div className="flex gap-2 overflow-x-auto no-scrollbar justify-center text-xs md:text-[13px]">
           {navItems.map((item) => (
@@ -1822,11 +1788,9 @@ export default function StudioUniverse() {
           ))}
         </div>
       </section>
-
       <section className="container mx-auto px-4 pb-10 -mt-2">
         <PackagesBar universe={universe} viewerTier={viewerTier} showVault={showVault} onCheckout={startStudioCheckout} />
       </section>
-
       <SectionIntro
         id="one-sheet"
         kicker="Studio One-Sheet"
@@ -1834,7 +1798,6 @@ export default function StudioUniverse() {
         lead="A fast executive read — built for the first five minutes of a serious conversation."
         tone="warm"
       />
-
       <section className="container mx-auto px-4 pb-12 -mt-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 rounded-3xl bg-white/80 dark:bg-gray-900/70 border border-amber-100/80 dark:border-gray-800 shadow-sm p-6 md:p-8">
@@ -1845,13 +1808,10 @@ export default function StudioUniverse() {
                 </span>
               ))}
             </div>
-
             <h3 className="text-2xl font-bold">Logline</h3>
             <p className="mt-2 text-base opacity-90">{universe.logline || "Add a studio-grade logline in Admin → Universes."}</p>
-
             <h3 className="text-2xl font-bold mt-6">Synopsis</h3>
             <p className="mt-2 opacity-90 leading-relaxed">{universe.synopsis || "Add a studio-grade synopsis in Admin → Universes."}</p>
-
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
               <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 p-4">
                 <div className="text-xs opacity-60 uppercase tracking-wider">Tone</div>
@@ -1867,50 +1827,41 @@ export default function StudioUniverse() {
               </div>
             </div>
           </div>
-
           <div className="rounded-3xl bg-white/80 dark:bg-gray-900/70 border border-amber-100/80 dark:border-gray-800 shadow-sm p-6 md:p-8">
             <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Executive Scan</div>
             <h3 className="text-xl font-bold mt-2">At a glance</h3>
-
             <div className="mt-4 flex flex-col gap-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Trailer</div>
                 <div className="text-sm font-semibold text-right">{trailerUrl ? "Available" : "Coming soon"}</div>
               </div>
-
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Sound</div>
                 <div className="text-sm font-semibold text-right">{audioItems.length ? `${audioItems.length} cues` : soundtrackResolved ? "Available" : "—"}</div>
               </div>
-
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Characters</div>
                 <div className="text-sm font-semibold text-right">{characterAssets.length ? `${characterAssets.length}` : "—"}</div>
               </div>
-
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">World Map</div>
                 <div className="text-sm font-semibold text-right">{hasWorldMapSection ? "Included" : "—"}</div>
               </div>
-
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Merch</div>
                 <div className="text-sm font-semibold text-right">{merchAssets.length ? `${merchAssets.length}` : "—"}</div>
               </div>
-
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Producer Materials</div>
                 <div className="text-sm font-semibold text-right">
                   {packageBar.count}/{packageBar.total}
                 </div>
               </div>
-
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Viewing Tier</div>
                 <div className="text-sm font-semibold text-right">{tierLabel(viewerTier)}</div>
               </div>
             </div>
-
             <div className="mt-6 rounded-2xl bg-amber-200 text-amber-950 p-4">
               <div className="text-sm font-semibold">Options / Licensing</div>
               <div className="text-xs opacity-80 mt-1">Company • budget • timeline</div>
@@ -1924,7 +1875,6 @@ export default function StudioUniverse() {
           </div>
         </div>
       </section>
-
       {trailerUrl ? (
         <>
           <SectionIntro id="trailer" kicker="Sizzle" title="Trailer" lead="Tone. Scale. Momentum. One watch." tone="neutral" align="center" />
@@ -1935,7 +1885,6 @@ export default function StudioUniverse() {
           </section>
         </>
       ) : null}
-
       {(audioItems.length || soundtrackResolved) ? (
         <>
           <SectionIntro
@@ -1955,7 +1904,6 @@ export default function StudioUniverse() {
               align="left"
               className="mb-6"
             />
-
             {audioItems.length ? (
               audioItems.length === 1 ? (
                 <div className="flex justify-center">
@@ -1976,7 +1924,6 @@ export default function StudioUniverse() {
                 <div className="opacity-80 mt-2">Publish media posts tagged to this universe to auto-sync here.</div>
               </div>
             )}
-
             {soundtrackResolved ? (
               <div className="mt-10">
                 <HeaderCard
@@ -2001,7 +1948,6 @@ export default function StudioUniverse() {
                   ) : (
                     <div className="text-sm opacity-70">Soundtrack link detected (open via button).</div>
                   )}
-
                   <div className="mt-4 flex flex-wrap gap-2 justify-center">
                     <a
                       className="px-5 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black font-semibold"
@@ -2026,7 +1972,6 @@ export default function StudioUniverse() {
           </section>
         </>
       ) : null}
-
       {characterAssets.length ? (
         <>
           <SectionIntro id="characters" kicker="Cast" title="Characters" lead="Core cast — roles, identities, and portraits for deck continuity." tone="neutral" align="center" />
@@ -2055,7 +2000,6 @@ export default function StudioUniverse() {
           </section>
         </>
       ) : null}
-
       {hasWorldMapSection ? (
         <>
           <SectionIntro id="world-map" kicker="World" title="World Map" lead="Geography, regions, and zones — the big picture." tone="neutral" align="center" />
@@ -2069,7 +2013,6 @@ export default function StudioUniverse() {
                 </div>
               </div>
             ) : null}
-
             {worldMapAssets.length ? (
               <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2 snap-x snap-mandatory">
                 {worldMapAssets.map((m) => (
@@ -2091,7 +2034,116 @@ export default function StudioUniverse() {
           </section>
         </>
       ) : null}
+{bookProducts.length ? (
+  <>
+    <SectionIntro
+      id="books"
+      kicker="Publishing"
+      title="Books & Collections"
+      lead="Publishing products linked to this universe (matched by universe_id)."
+      tone="neutral"
+      align="center"
+    />
+    <section className="container mx-auto px-4 pb-14 -mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {bookProducts.map((product) => {
+          const m = product.metadata || {};
 
+          const buyUrl =
+            m.amazon_url ||
+            m.kindle_url ||
+            m.paperback_url ||
+            m.store_url ||
+            null;
+
+          const alsoLinks = [
+            m.kindle_url ? { label: "Kindle", url: m.kindle_url } : null,
+            m.paperback_url ? { label: "Paperback", url: m.paperback_url } : null,
+          ].filter(Boolean);
+
+          const chips = [
+            m.series || m.book || null,
+            m.format ? String(m.format).toUpperCase() : null,
+            m.year ? `Published ${m.year}` : null,
+          ].filter(Boolean);
+
+          return (
+            <Card
+              key={product.id}
+              title={product.name}
+              description={product.description}
+              image={product.display_image || pickProductImage(product)}
+              category="publishing"
+              tags={Array.isArray(product.tags) ? product.tags : []}
+            >
+              {chips.length ? (
+                <div className="flex flex-wrap gap-2 justify-center mb-3">
+                  {chips.map((c) => (
+                    <span
+                      key={c}
+                      className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    >
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-3 mt-2 justify-center">
+                {buyUrl ? (
+                  <a
+                    href={buyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn bg-black text-white py-2 px-4 rounded hover:opacity-90 transition"
+                  >
+                    Get Your Copy
+                  </a>
+                ) : (
+                  <Link
+                    href="/publishing"
+                    className="btn bg-black text-white py-2 px-4 rounded hover:opacity-90 transition"
+                  >
+                    View in Publishing
+                  </Link>
+                )}
+
+                {m.pdf_url ? (
+                  <a
+                    href={m.pdf_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn bg-white/90 text-gray-900 border border-gray-200 py-2 px-4 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
+                  >
+                    Read Sample
+                  </a>
+                ) : null}
+              </div>
+
+              {alsoLinks.length ? (
+                <div className="text-xs text-gray-600 dark:text-gray-300 mt-3 text-center">
+                  Also available:{" "}
+                  {alsoLinks.map((l, i) => (
+                    <a
+                      key={l.label}
+                      href={l.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-blue-700"
+                    >
+                      {l.label}
+                      {i < alsoLinks.length - 1 ? ", " : ""}
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+            </Card>
+          );
+        })}
+      </div>
+    </section>
+  </>
+) : null}
       <SectionIntro id="visuals" kicker="Visual Identity" title="Merch" lead="Merch mockups for brand extension, drops, and audience capture." tone="neutral" align="center" />
       <section className="container mx-auto px-4 pb-14 -mt-6">
         {merchAssets.length ? (
@@ -2122,7 +2174,6 @@ export default function StudioUniverse() {
           </div>
         )}
       </section>
-
       <SectionIntro id="vault" kicker="IP Vault" title="Adaptation Assets" lead="Package components for partners, buyers, and serious option conversations." tone="warm" align="center" />
       <section className="container mx-auto px-4 pb-14 -mt-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -2147,7 +2198,6 @@ export default function StudioUniverse() {
               <div className="text-sm opacity-70">Currently not configured.</div>
             </Card>
           )}
-
           {nftAssets.map((a) => (
             <Card key={a.id} title={a.title || "Collectible"} description="Limited edition collectible / unlockable.">
               {a.metadata?.nft_url ? (
@@ -2159,7 +2209,6 @@ export default function StudioUniverse() {
               )}
             </Card>
           ))}
-
           {(audioItems.length || soundtrackResolved) ? (
             <Card title="Sound Package" description="Themes + cues + soundtrack (synced from /media).">
               <a className="underline" href="#audio">
@@ -2169,7 +2218,6 @@ export default function StudioUniverse() {
           ) : null}
         </div>
       </section>
-
       {groupedPages.length ? (
         <>
           <SectionIntro id="package" kicker="Studio Package" title="Producer-Ready Materials" lead="Organized like a real optionable package — skim first, dive second." tone="neutral" align="center" />
@@ -2183,7 +2231,6 @@ export default function StudioUniverse() {
               onCheckout={startStudioCheckout}
             >
               <LockedSectionsPreview universe={universe} pages={studioPages} viewerTier={viewerTier} showVault={showVault} />
-
               <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8 mb-6 mt-6">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div>
@@ -2193,12 +2240,10 @@ export default function StudioUniverse() {
                     </div>
                     <div className="text-sm opacity-80 mt-2">Add missing pages in Studio Pages.</div>
                   </div>
-
                   <div className="min-w-[220px] flex-1">
                     <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-800 border overflow-hidden mt-2">
                       <div className="h-full bg-black dark:bg-white" style={{ width: `${Math.round((packageBar.count / packageBar.total) * 100)}%` }} />
                     </div>
-
                     <div className="mt-4 flex flex-wrap gap-2 justify-end">
                       {showVault ? chip("Vault: ON") : chip("Vault: OFF")}
                       {chip(`Tier: ${tierLabel(viewerTier)}`)}
@@ -2207,7 +2252,6 @@ export default function StudioUniverse() {
                     </div>
                   </div>
                 </div>
-
                 <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
                   {studioToc.slice(0, 18).map((t) => {
                     if (t.kind === "group") {
@@ -2246,7 +2290,6 @@ export default function StudioUniverse() {
                   })}
                 </div>
               </div>
-
               <div className="space-y-10">
                 {groupedPages.map((g) => (
                   <div key={g.key} id={`pkg-${g.key}`} className="scroll-mt-28">
@@ -2281,7 +2324,6 @@ export default function StudioUniverse() {
                                 <h3 className="text-2xl font-bold mt-2">{p.title || tag}</h3>
                                 {p.excerpt ? <div className="mt-2 text-sm opacity-80">{p.excerpt}</div> : null}
                               </div>
-
                               {p.hero_image_url || p.hero_video_url ? (
                                 <div className="flex gap-2">
                                   {p.hero_video_url ? (
@@ -2297,10 +2339,8 @@ export default function StudioUniverse() {
                                 </div>
                               ) : null}
                             </div>
-
                             <div className="mt-5">{renderPlainMarkdown(p.content_md)}</div>
                             <PageAttachmentsRail page={p} />
-
                             <div className="mt-6 flex justify-end">
                               <a href="#package" className="text-sm underline opacity-70 hover:opacity-100">
                                 Back to materials ↑
@@ -2341,7 +2381,6 @@ export default function StudioUniverse() {
           </section>
         </>
       )}
-
       <section className="container mx-auto px-4 pb-14">
         <div className="rounded-3xl bg-white/80 dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 shadow-sm p-6 md:p-8">
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -2371,7 +2410,6 @@ export default function StudioUniverse() {
           </div>
         </div>
       </section>
-
       <section className="container mx-auto px-4 pb-20" id="contact">
         <div className="text-center">
           <div className="text-3xl font-bold">Options / Licensing</div>
