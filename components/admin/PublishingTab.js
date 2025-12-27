@@ -10,13 +10,18 @@ import {
 } from '@/lib/adminUtils';
 
 const extractMetaFields = (m = {}) => ({
-  amazon_url:   m.amazon_url   || '',
-  kindle_url:   m.kindle_url   || '',
-  paperback_url:m.paperback_url|| '',
-  store_url:    m.store_url    || '',
-  pdf_url:      m.pdf_url      || '',
-  format:       m.format       || '',
-  year:         m.year ?? '',
+  // ✅ Added (requested)
+  universe_id: m.universe_id || '',
+  stripe_price_id: m.stripe_price_id || '',
+
+  // existing
+  amazon_url:    m.amazon_url || '',
+  kindle_url:    m.kindle_url || '',
+  paperback_url: m.paperback_url || '',
+  store_url:     m.store_url || '',
+  pdf_url:       m.pdf_url || '',
+  format:        m.format || '',
+  year:          m.year ?? '',
 });
 
 export default function PublishingTab({ products: allProducts, refreshAll }) {
@@ -39,18 +44,36 @@ export default function PublishingTab({ products: allProducts, refreshAll }) {
     // Merge metadata from quick fields + raw JSON (if user edited it)
     const currentMeta = p.metadata || {};
     const quick = row.metaQuick || {};
+
+    // ✅ Guardrail: prevent accidental bleed from offers into books
+    // (Offers use tier/access_tier/required_tier; Publishing should not.)
+    const quickSanitized = { ...quick };
+    if (quickSanitized?.tier !== undefined) delete quickSanitized.tier;
+    if (quickSanitized?.access_tier !== undefined) delete quickSanitized.access_tier;
+    if (quickSanitized?.required_tier !== undefined) delete quickSanitized.required_tier;
+
+    // ✅ Validate Stripe price id format (optional but smart)
+    if (
+      quickSanitized?.stripe_price_id &&
+      !String(quickSanitized.stripe_price_id).startsWith('price_')
+    ) {
+      throw new Error('stripe_price_id should start with "price_"');
+    }
+
     const mergedQuick = {
       ...currentMeta,
-      ...quick,
+      ...quickSanitized,
       // normalize simple fields
-      ...(quick.year !== undefined && quick.year !== '' ? { year: Number(quick.year) } : {}),
-      ...(quick.format !== undefined ? { format: quick.format } : {}),
+      ...(quickSanitized.year !== undefined && quickSanitized.year !== ''
+        ? { year: Number(quickSanitized.year) }
+        : {}),
+      ...(quickSanitized.format !== undefined ? { format: quickSanitized.format } : {}),
     };
 
     // If user typed JSON manually, it wins. Otherwise use mergedQuick.
     if (row.metadataStr !== undefined) {
       payload.metadata = safeJSON(row.metadataStr, mergedQuick);
-    } else if (Object.keys(quick).length) {
+    } else if (Object.keys(quickSanitized).length) {
       payload.metadata = mergedQuick;
     }
 
@@ -174,6 +197,38 @@ export default function PublishingTab({ products: allProducts, refreshAll }) {
                     {/* Quick Metadata fields */}
                     <td className="py-2 min-w-[320px]">
                       <div className="grid grid-cols-1 gap-2">
+                        {/* ✅ Added */}
+                        <input
+                          className="w-full dark:bg-gray-800"
+                          placeholder="universe_id (optional, UUID)"
+                          value={quick.universe_id}
+                          onChange={(e) =>
+                            setEdits((prev) => ({
+                              ...prev,
+                              [p.id]: {
+                                ...row,
+                                metaQuick: { ...quick, universe_id: e.target.value },
+                              },
+                            }))
+                          }
+                        />
+
+                        {/* ✅ Added */}
+                        <input
+                          className="w-full dark:bg-gray-800"
+                          placeholder="stripe_price_id (optional) e.g. price_123..."
+                          value={quick.stripe_price_id}
+                          onChange={(e) =>
+                            setEdits((prev) => ({
+                              ...prev,
+                              [p.id]: {
+                                ...row,
+                                metaQuick: { ...quick, stripe_price_id: e.target.value },
+                              },
+                            }))
+                          }
+                        />
+
                         <input
                           className="w-full dark:bg-gray-800"
                           placeholder="amazon_url"

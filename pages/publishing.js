@@ -31,6 +31,18 @@ const shuffle = (arr) => {
   return a;
 };
 
+/**
+ * Offers have tier/access_tier/required_tier in metadata.
+ * Books do NOT.
+ */
+const isStudioOffer = (p) => {
+  const m = p?.metadata || {};
+  const tier = m?.tier ?? m?.access_tier ?? m?.required_tier;
+  return tier !== undefined && tier !== null && String(tier).trim() !== '';
+};
+
+const isBook = (p) => !isStudioOffer(p);
+
 export default function Publishing() {
   const dispatch = useDispatch();
   const [products, setProducts] = useState([]);
@@ -40,6 +52,9 @@ export default function Publishing() {
 
   // UX: allow readers to filter by series/universe
   const [activeSeries, setActiveSeries] = useState('ALL');
+
+  // ✅ NEW: stop double-clicking + show basic feedback
+  const [checkoutLoadingId, setCheckoutLoadingId] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -93,64 +108,102 @@ export default function Publishing() {
     dispatch(addToCart({ ...product, productType: 'book' }));
   };
 
-  // ---- Derived data: series filters & filtered list ----
+  // ✅ NEW: Stripe checkout (re-uses your existing create-session endpoint)
+  const handleStripeCheckout = async (product) => {
+    try {
+      const pid = product?.id;
+      if (!pid) {
+        alert('Missing product id.');
+        return;
+      }
 
+      // Only show button when this exists, but guard anyway
+      const stripePriceId = product?.metadata?.stripe_price_id;
+      if (!stripePriceId) {
+        alert('This book is not configured for Stripe checkout yet.');
+        return;
+      }
+
+      setCheckoutLoadingId(pid);
+
+      const res = await fetch('/api/checkout/create-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: pid,
+          quantity: 1,
+          // optional overrides:
+          // success_url: `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+          // cancel_url: `${window.location.origin}/publishing`,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Checkout failed');
+
+      if (json?.url) {
+        window.location.href = json.url;
+      } else {
+        throw new Error('No checkout URL returned');
+      }
+    } catch (e) {
+      alert(`Checkout failed: ${e.message}`);
+    } finally {
+      setCheckoutLoadingId(null);
+    }
+  };
+
+  /**
+   * books-only list derived once and reused everywhere
+   */
+  const books = useMemo(() => products.filter(isBook), [products]);
+
+  // ---- Derived data: series filters & filtered list ----
   const seriesOptions = useMemo(() => {
     const set = new Set();
-    products.forEach((p) => {
+    books.forEach((p) => {
       const m = p.metadata || {};
       const label = m.series || m.book;
       if (label) set.add(String(label));
     });
     return ['ALL', ...Array.from(set)];
-  }, [products]);
+  }, [books]);
 
   const filteredProducts = useMemo(() => {
-    if (activeSeries === 'ALL') return products;
-    return products.filter((p) => {
+    if (activeSeries === 'ALL') return books;
+    return books.filter((p) => {
       const m = p.metadata || {};
       return m.series === activeSeries || m.book === activeSeries;
     });
-  }, [products, activeSeries]);
+  }, [books, activeSeries]);
 
   // ---- Multi-rail slices ----
-
-  // 1) “Start Here” rail – prefer metadata.start_here
   const startHereBooks = useMemo(() => {
-    if (!products.length) return [];
-    const flagged = products.filter((p) => p?.metadata?.start_here);
+    if (!books.length) return [];
+    const flagged = books.filter((p) => p?.metadata?.start_here);
     if (flagged.length >= 3) return shuffle(flagged).slice(0, 3);
 
-    const sorted = [...products].sort(
+    const sorted = [...books].sort(
       (a, b) => (b?.metadata?.year || 0) - (a?.metadata?.year || 0)
     );
     return sorted.slice(0, 3);
-  }, [products]);
+  }, [books]);
 
-  // 2) Books with samples (PDF / chapter)
   const sampleBooks = useMemo(
-    () =>
-      shuffle(
-        products.filter((p) => p?.metadata?.pdf_url)
-      ).slice(0, 4),
-    [products]
+    () => shuffle(books.filter((p) => p?.metadata?.pdf_url)).slice(0, 4),
+    [books]
   );
 
-  // 3) Books that clearly have merch
   const merchLinkedBooks = useMemo(
     () =>
       shuffle(
-        products.filter((p) => {
+        books.filter((p) => {
           const m = p.metadata || {};
           const tags = p.tags || [];
-          return (
-            m.has_merch ||
-            tags.includes('has_merch') ||
-            tags.includes('designs')
-          );
+          return m.has_merch || tags.includes('has_merch') || tags.includes('designs');
         })
       ).slice(0, 4),
-    [products]
+    [books]
   );
 
   if (loading) {
@@ -197,7 +250,7 @@ export default function Publishing() {
         </div>
       </Hero>
 
-      {/* MICRO-NAV (Disney+ style) */}
+      {/* MICRO-NAV */}
       <section className="container mx-auto px-4 -mt-8 mb-10">
         <div className="flex gap-2 overflow-x-auto no-scrollbar justify-center text-xs md:text-[13px]">
           {[
@@ -219,7 +272,7 @@ export default function Publishing() {
         </div>
       </section>
 
-      {/* SOCIAL PROOF / TESTIMONIALS INTRO */}
+      {/* TESTIMONIALS */}
       <SectionIntro
         id="reader-impressions"
         kicker="Reader Impressions"
@@ -228,39 +281,31 @@ export default function Publishing() {
         tone="warm"
       />
 
-      {/* SOCIAL PROOF / TESTIMONIALS CONTENT */}
       <section className="container mx-auto px-4 pb-10 -mt-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="card p-5 text-center bg-white/90 shadow-sm rounded-2xl dark:bg-gray-900/60">
             <p className="italic text-sm md:text-base">
               &quot;Felt like watching a prestige series in my head.&quot;
             </p>
-            <p className="text-xs mt-3 text-gray-500 dark:text-gray-400">
-              — Early Reader
-            </p>
+            <p className="text-xs mt-3 text-gray-500 dark:text-gray-400">— Early Reader</p>
           </div>
           <div className="card p-5 text-center bg-white/90 shadow-sm rounded-2xl dark:bg-gray-900/60">
             <p className="italic text-sm md:text-base">
               &quot;Grounded, human, and still wildly imaginative.&quot;
             </p>
-            <p className="text-xs mt-3 text-gray-500 dark:text-gray-400">
-              — Beta Reader
-            </p>
+            <p className="text-xs mt-3 text-gray-500 dark:text-gray-400">— Beta Reader</p>
           </div>
           <div className="card p-5 text-center bg-white/90 shadow-sm rounded-2xl dark:bg-gray-900/60">
             <p className="italic text-sm md:text-base">
               &quot;The kind of world you keep thinking about at work.&quot;
             </p>
-            <p className="text-xs mt-3 text-gray-500 dark:text-gray-400">
-              — Advance Copy Reader
-            </p>
+            <p className="text-xs mt-3 text-gray-500 dark:text-gray-400">— Advance Copy Reader</p>
           </div>
         </div>
       </section>
 
-      {/* SERIES FILTERS + LIBRARY (ALL BOOKS RAIL) */}
+      {/* LIBRARY */}
       <section id="books" className="container mx-auto px-4 pt-10 pb-16">
-        {/* Filter bar */}
         {seriesOptions.length > 1 && (
           <div className="flex flex-wrap gap-3 justify-center mb-6">
             {seriesOptions.map((series) => {
@@ -284,7 +329,7 @@ export default function Publishing() {
           </div>
         )}
 
-        {/* Counter / context bar */}
+        {/* Snapshot (your “count only what is shown” version) */}
         <div className="mb-8">
           <div className="max-w-3xl mx-auto">
             <div className="flex flex-col items-center gap-2 px-4 py-3 rounded-2xl bg-white/80 border border-amber-200/70 shadow-sm text-sm text-gray-700 text-center dark:bg-gray-900/70 dark:border-amber-800/60 dark:text-gray-100">
@@ -293,10 +338,7 @@ export default function Publishing() {
               </span>
               <span>
                 Showing <span className="font-semibold">{list.length}</span> of{' '}
-                <span className="font-semibold">
-                  {total || products.length}
-                </span>{' '}
-                books &amp; collections
+                <span className="font-semibold">{list.length}</span> books &amp; collections
                 {activeSeries !== 'ALL' && (
                   <>
                     {' '}
@@ -319,7 +361,7 @@ export default function Publishing() {
           </div>
         </div>
 
-        {/* Book grid */}
+        {/* Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {list.length === 0 ? (
             <div className="col-span-full text-center text-lg">
@@ -335,13 +377,11 @@ export default function Publishing() {
                 m.store_url ||
                 null;
 
+              const stripePriceId = m.stripe_price_id || null;
+
               const alsoLinks = [
-                m.kindle_url
-                  ? { label: 'Kindle', url: m.kindle_url }
-                  : null,
-                m.paperback_url
-                  ? { label: 'Paperback', url: m.paperback_url }
-                  : null,
+                m.kindle_url ? { label: 'Kindle', url: m.kindle_url } : null,
+                m.paperback_url ? { label: 'Paperback', url: m.paperback_url } : null,
               ].filter(Boolean);
 
               const chips = [
@@ -349,6 +389,8 @@ export default function Publishing() {
                 m.format ? String(m.format).toUpperCase() : null,
                 m.year ? `Published ${m.year}` : null,
               ].filter(Boolean);
+
+              const isCheckingOut = checkoutLoadingId === product.id;
 
               return (
                 <Card
@@ -359,7 +401,6 @@ export default function Publishing() {
                   category="publishing"
                   tags={Array.isArray(product.tags) ? product.tags : []}
                 >
-                  {/* Meta chips */}
                   {chips.length > 0 && (
                     <div className="flex flex-wrap gap-2 justify-center mb-3">
                       {chips.map((c) => (
@@ -373,8 +414,9 @@ export default function Publishing() {
                     </div>
                   )}
 
-                  {/* Primary CTAs */}
+                  {/* CTAs */}
                   <div className="flex flex-wrap gap-3 mt-2 justify-center">
+                    {/* External store wins if present */}
                     {buyUrl && (
                       <a
                         href={buyUrl}
@@ -385,6 +427,25 @@ export default function Publishing() {
                         Get Your Copy
                       </a>
                     )}
+
+                    {/* Stripe buy for digital (only when no external buyUrl) */}
+                    {!buyUrl && stripePriceId && (
+                      <button
+                        type="button"
+                        disabled={isCheckingOut}
+                        onClick={() => handleStripeCheckout(product)}
+                        className={[
+                          'btn py-2 px-4 rounded transition',
+                          isCheckingOut
+                            ? 'bg-gray-400 text-white cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700',
+                        ].join(' ')}
+                        title={`Stripe: ${stripePriceId}`}
+                      >
+                        {isCheckingOut ? 'Redirecting…' : 'Buy Digital'}
+                      </button>
+                    )}
+
                     {m.pdf_url && (
                       <a
                         href={m.pdf_url}
@@ -397,7 +458,6 @@ export default function Publishing() {
                     )}
                   </div>
 
-                  {/* Secondary storefront links */}
                   {alsoLinks.length > 0 && (
                     <div className="text-xs text-gray-600 dark:text-gray-300 mt-3 text-center">
                       Also available:{' '}
@@ -416,8 +476,8 @@ export default function Publishing() {
                     </div>
                   )}
 
-                  {/* Optional add-to-cart for future store integration */}
-                  {!buyUrl && (
+                  {/* Fallback cart only when no buyUrl AND no Stripe price */}
+                  {!buyUrl && !stripePriceId && (
                     <div className="mt-4 flex justify-center">
                       <button
                         type="button"
@@ -435,7 +495,7 @@ export default function Publishing() {
         </div>
       </section>
 
-      {/* “START HERE” RAIL */}
+      {/* START HERE */}
       <SectionIntro
         id="where-to-start"
         kicker="Start Here"
@@ -457,14 +517,13 @@ export default function Publishing() {
           ))}
           {startHereBooks.length < 3 && (
             <p className="col-span-full text-center opacity-70 text-sm">
-              Flag more titles with <code>metadata.start_here = true</code> in
-              admin to fill this rail.
+              Flag more titles with <code>metadata.start_here = true</code> in admin to fill this rail.
             </p>
           )}
         </div>
       </section>
 
-      {/* FREE TO READ / SAMPLES RAIL */}
+      {/* SAMPLES */}
       {sampleBooks.length > 0 && (
         <>
           <SectionIntro
@@ -507,7 +566,7 @@ export default function Publishing() {
         </>
       )}
 
-      {/* BOOKS WITH MERCH RAIL */}
+      {/* MERCH LINKED */}
       {merchLinkedBooks.length > 0 && (
         <>
           <SectionIntro
@@ -555,7 +614,6 @@ export default function Publishing() {
         />
       </section>
 
-      {/* GLOBAL RECOMMENDER (cross-division) */}
       <Recommender />
     </>
   );
