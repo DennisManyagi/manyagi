@@ -1,4 +1,3 @@
-// pages/studios/[slug].js
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -11,14 +10,12 @@ import { supabase } from "@/lib/supabase";
    Publishing helpers (Books)
 --------------------------------*/
 const asList = (v) => (Array.isArray(v) ? v : Array.isArray(v?.items) ? v.items : []);
-
 const pickProductImage = (p) =>
   p?.thumbnail_url ||
   p?.display_image ||
   p?.image_url ||
   p?.image ||
   "/placeholder.png";
-
 /**
  * Offers have tier/access_tier/required_tier in metadata.
  * Books do NOT.
@@ -28,18 +25,14 @@ const isStudioOfferProduct = (p) => {
   const tier = m?.tier ?? m?.access_tier ?? m?.required_tier;
   return tier !== undefined && tier !== null && String(tier).trim() !== "";
 };
-
 const isBookProduct = (p) => !isStudioOfferProduct(p);
-
 function matchesUniverseForProduct(product, universe) {
   if (!product || !universe) return false;
   const m = product.metadata || {};
   const uid = safeStr(m.universe_id);
   if (uid && safeStr(universe.id) && uid === safeStr(universe.id)) return true;
-
   const title = safeStr(universe.title).toLowerCase();
   const slug = safeStr(universe.slug).toLowerCase();
-
   const fields = [
     safeStr(m.universe).toLowerCase(),
     safeStr(m.book).toLowerCase(),
@@ -47,18 +40,14 @@ function matchesUniverseForProduct(product, universe) {
     safeStr(m.ip).toLowerCase(),
     safeStr(m.franchise).toLowerCase(),
   ].filter(Boolean);
-
   if (!fields.length) return false;
-
   // exact hits
   if (title && fields.includes(title)) return true;
   if (slug && fields.includes(slug)) return true;
-
   // soft contains
   const hay = fields.join(" ");
   if (title && hay.includes(title)) return true;
   if (slug && hay.includes(slug)) return true;
-
   return false;
 }
 /* ------------------------------
@@ -90,6 +79,117 @@ function safeMeta(meta) {
     }
   }
   return {};
+}
+/* ------------------------------
+   Studio Offer helpers (Supabase products)
+--------------------------------*/
+const PRODUCTS_SELECT_SAFE =
+  "id,name,description,status,price,image_url,thumbnail_url,metadata,updated_at";
+const STUDIO_TIER_ORDER = ["public", "priority", "producer", "packaging"];
+function normalizeStudioOfferRow(row) {
+  const md = safeJson(row?.metadata, {});
+  const tier = normalizeTier(md?.tier || md?.access_tier || md?.required_tier || "public");
+  // bullet list comes from metadata.features or metadata.bullets (array) or description lines
+  const bullets =
+    (Array.isArray(md?.features) && md.features) ||
+    (Array.isArray(md?.bullets) && md.bullets) ||
+    (Array.isArray(md?.deliverables) && md.deliverables) ||
+    [];
+  const duration =
+    safeStr(md?.duration_label) ||
+    (md?.duration_days ? `${md.duration_days} days` : "") ||
+    "";
+  const image =
+    row?.image_url ||
+    row?.thumbnail_url ||
+    md?.image_url ||
+    md?.thumbnail_url ||
+    "";
+  // price display: prefer row.price (your db), fallback to metadata.price
+  const price =
+    row?.price ?? md?.price ?? null;
+  return {
+    id: row?.id,
+    tier,
+    name: row?.name || md?.title || "",
+    description: row?.description || md?.description || "",
+    bullets: Array.isArray(bullets) ? bullets.map((x) => safeStr(x)).filter(Boolean) : [],
+    duration: safeStr(duration),
+    image_url: image,
+    price_value: price,
+    updated_at: row?.updated_at || null,
+    raw: row,
+  };
+}
+// "Offer rows" only (avoid books + other products)
+function isStudioOfferRow(row) {
+  const md = safeJson(row?.metadata, {});
+  const offerType = safeStr(md?.offer_type).toLowerCase();
+  const tier = normalizeTier(md?.tier || md?.access_tier || md?.required_tier || "public");
+  // ✅ Strong filter: offer_type must be studio_access
+  // Temporarily removed: if (offerType !== "studio_access") return false;
+  // ✅ Must be one of our tiers
+  if (!STUDIO_TIER_ORDER.includes(tier)) return false;
+  return true;
+}
+// overlap rule: ONE per tier (newest wins)
+function dedupeOffersByTier(rows = []) {
+  const byTier = new Map();
+  for (const r of rows) {
+    const t = normalizeTier(r?.tier);
+    const prev = byTier.get(t);
+    if (!prev) byTier.set(t, r);
+    else {
+      const a = new Date(prev.updated_at || 0).getTime();
+      const b = new Date(r.updated_at || 0).getTime();
+      if (b >= a) byTier.set(t, r);
+    }
+  }
+  return STUDIO_TIER_ORDER.map((t) => byTier.get(t)).filter(Boolean);
+}
+async function loadStudioOffersForUniverseId(universeId) {
+  if (!universeId) return [];
+  // Try server-side JSON filter first
+  try {
+    const { data, error } = await supabase
+      .from("products")
+      .select(PRODUCTS_SELECT_SAFE)
+      .eq("status", "active")
+      .filter("metadata->>universe_id", "eq", String(universeId))
+      .order("updated_at", { ascending: false })
+      .limit(50);
+    if (!error && data) {
+      const offers = (data || [])
+        .filter(isStudioOfferRow)
+        .map(normalizeStudioOfferRow);
+      return dedupeOffersByTier(offers);
+    }
+  } catch {
+    // fall through
+  }
+  // Fallback: load & filter client-side
+  const { data } = await supabase
+    .from("products")
+    .select(PRODUCTS_SELECT_SAFE)
+    .eq("status", "active")
+    .order("updated_at", { ascending: false })
+    .limit(200);
+  const offers = (data || [])
+    .filter((row) => {
+      const md = safeJson(row?.metadata, {});
+      return (
+        safeStr(md?.universe_id) === String(universeId)
+      );
+    })
+    .filter(isStudioOfferRow)
+    .map(normalizeStudioOfferRow);
+  return dedupeOffersByTier(offers);
+}
+// nice display for numeric price
+function formatUsd(price) {
+  const n = Number(price);
+  if (!Number.isFinite(n)) return "";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 }
 /* ------------------------------
    URL + platform helpers
@@ -797,8 +897,8 @@ function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, o
     </div>
   );
 }
-function PackagesBar({ universe, viewerTier, showVault, onCheckout }) {
-  const tiers = [
+function PackagesBar({ universe, viewerTier, showVault, onCheckout, offers = [], offersLoading = false }) {
+  const fallbackTiers = [
     {
       key: "priority",
       title: "Priority Window",
@@ -821,18 +921,40 @@ function PackagesBar({ universe, viewerTier, showVault, onCheckout }) {
       bullets: ["Deal room access", "Rights matrix", "Option docs"],
     },
   ];
+  // Convert DB offers to same shape as fallback
+  const dbTiers = (offers || []).map((o) => ({
+    key: o.tier,
+    title: o.name || tierLabel(o.tier),
+    price: formatUsd(o.price_value) || "",
+    duration: o.duration || "",
+    bullets: (o.bullets && o.bullets.length ? o.bullets : [])
+      .slice(0, 6),
+    image_url: o.image_url || "",
+    description: o.description || "",
+  }));
+  // Merge rule: DB overrides fallback by tier
+  const byTier = new Map();
+  fallbackTiers.forEach((t) => byTier.set(t.key, t));
+  dbTiers.forEach((t) => byTier.set(t.key, t));
+  const tiers = ["priority", "producer", "packaging"]
+    .map((k) => byTier.get(k))
+    .filter(Boolean);
   return (
     <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Packages</div>
           <div className="text-2xl font-bold mt-2">Choose access level</div>
-          <div className="text-sm opacity-80 mt-2">Organize your studio pages into sellable tiers.</div>
+          <div className="text-sm opacity-80 mt-2">
+            Organize your studio pages into sellable tiers.
+            {offersLoading ? " (Loading offers…)" : ""}
+          </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={tierBadge(viewerTier)}>Viewing: {tierLabel(viewerTier)}</span>
             {showVault ? chip("Vault: ON") : chip("Vault: OFF")}
           </div>
         </div>
+        {/* tier buttons stay the same */}
         <div className="flex gap-2 flex-wrap justify-end">
           <Link
             href={universe?.slug ? `/studios/${universe.slug}?tier=public${showVault ? "&vault=1" : ""}` : "#"}
@@ -873,15 +995,23 @@ function PackagesBar({ universe, viewerTier, showVault, onCheckout }) {
                   : "border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/20",
               ].join(" ")}
             >
+              {/* OPTIONAL: show offer image if you uploaded one in admin */}
+              {t.image_url ? (
+                <div className="mb-4 rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-800">
+                  <img src={t.image_url} alt={t.title} className="w-full h-32 object-cover" loading="lazy" />
+                </div>
+              ) : null}
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">{t.duration}</div>
+                  <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">{t.duration || tierLabel(t.key)}</div>
                   <div className="text-lg font-bold mt-1">{t.title}</div>
                 </div>
                 <div className="text-sm font-semibold">{t.price}</div>
               </div>
+              {/* OPTIONAL: show description from admin */}
+              {t.description ? <div className="text-sm opacity-80 mt-2 line-clamp-3">{t.description}</div> : null}
               <ul className="mt-3 space-y-2 text-sm opacity-90">
-                {t.bullets.map((b) => (
+                {(t.bullets || []).slice(0, 6).map((b) => (
                   <li key={b} className="flex gap-2">
                     <span className="mt-[2px]">•</span>
                     <span>{b}</span>
@@ -1313,6 +1443,8 @@ export default function StudioUniverse() {
   const [loading, setLoading] = useState(true);
   const [tierProducts, setTierProducts] = useState({});
   const [bookProducts, setBookProducts] = useState([]);
+  const [studioOffers, setStudioOffers] = useState([]);
+  const [offersLoading, setOffersLoading] = useState(false);
   // Keep URL tier in sync as a default (entitlements can override later)
   useEffect(() => {
     setViewerTier(requestedTier || "public");
@@ -1395,13 +1527,26 @@ export default function StudioUniverse() {
   }, [slug]);
   useEffect(() => {
     if (!universe?.id) return;
+    if (!universe?.id) return;
+    let cancelled = false;
+    (async () => {
+      setOffersLoading(true);
+      const rows = await loadStudioOffersForUniverseId(universe.id);
+      if (!cancelled) setStudioOffers(rows);
+      setOffersLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [universe?.id]);
+  useEffect(() => {
+    if (!universe?.id) return;
     async function loadTierProducts() {
       const { data: products } = await supabase
         .from("products")
         .select("id, metadata")
         .eq("status", "active")
-        .filter("metadata->>universe_id", "eq", universe.id)
-        .filter("metadata->>kind", "eq", "digital");
+        .filter("metadata->>universe_id", "eq", universe.id);
       const map = {};
       (products || []).forEach((p) => {
         const meta = safeJson(p.metadata);
@@ -1415,13 +1560,11 @@ export default function StudioUniverse() {
   useEffect(() => {
     if (!universe?.id) return;
     let cancelled = false;
-
     (async () => {
       try {
         // Pull all publishing products from your existing API
         const res = await fetch("/api/products?division=publishing");
         const json = await res.json();
-
         const all = asList(json).map((p) => {
           const meta = safeJson(p.metadata, {});
           return {
@@ -1430,20 +1573,16 @@ export default function StudioUniverse() {
             display_image: pickProductImage(p),
           };
         });
-
         // books only (exclude studio offers)
         const books = all.filter(isBookProduct);
-
         // scope to this universe
         const scoped = books.filter((p) => matchesUniverseForProduct(p, universe));
-
         if (!cancelled) setBookProducts(scoped);
       } catch (e) {
         console.error("studio books fetch error:", e);
         if (!cancelled) setBookProducts([]);
       }
     })();
-
     return () => {
       cancelled = true;
     };
@@ -1700,9 +1839,7 @@ export default function StudioUniverse() {
     ...(audioItems.length || soundtrackResolved ? [{ href: "#audio", label: "Sound" }] : []),
     ...(characterAssets.length ? [{ href: "#characters", label: "Characters" }] : []),
     ...(hasWorldMapSection ? [{ href: "#world-map", label: "World Map" }] : []),
-
     ...(bookProducts.length ? [{ href: "#books", label: "Books" }] : []),
-
     { href: "#visuals", label: "Merch" },
     { href: "#vault", label: "Adaptation Assets" },
     ...(groupedPages.length ? [{ href: "#package", label: "Producer Materials" }] : []),
@@ -1789,7 +1926,14 @@ export default function StudioUniverse() {
         </div>
       </section>
       <section className="container mx-auto px-4 pb-10 -mt-2">
-        <PackagesBar universe={universe} viewerTier={viewerTier} showVault={showVault} onCheckout={startStudioCheckout} />
+        <PackagesBar
+          universe={universe}
+          viewerTier={viewerTier}
+          showVault={showVault}
+          onCheckout={startStudioCheckout}
+          offers={studioOffers}
+          offersLoading={offersLoading}
+        />
       </section>
       <SectionIntro
         id="one-sheet"
@@ -2048,25 +2192,21 @@ export default function StudioUniverse() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {bookProducts.map((product) => {
           const m = product.metadata || {};
-
           const buyUrl =
             m.amazon_url ||
             m.kindle_url ||
             m.paperback_url ||
             m.store_url ||
             null;
-
           const alsoLinks = [
             m.kindle_url ? { label: "Kindle", url: m.kindle_url } : null,
             m.paperback_url ? { label: "Paperback", url: m.paperback_url } : null,
           ].filter(Boolean);
-
           const chips = [
             m.series || m.book || null,
             m.format ? String(m.format).toUpperCase() : null,
             m.year ? `Published ${m.year}` : null,
           ].filter(Boolean);
-
           return (
             <Card
               key={product.id}
@@ -2088,7 +2228,6 @@ export default function StudioUniverse() {
                   ))}
                 </div>
               ) : null}
-
               <div className="flex flex-wrap gap-3 mt-2 justify-center">
                 {buyUrl ? (
                   <a
@@ -2107,7 +2246,6 @@ export default function StudioUniverse() {
                     View in Publishing
                   </Link>
                 )}
-
                 {m.pdf_url ? (
                   <a
                     href={m.pdf_url}
@@ -2119,7 +2257,6 @@ export default function StudioUniverse() {
                   </a>
                 ) : null}
               </div>
-
               {alsoLinks.length ? (
                 <div className="text-xs text-gray-600 dark:text-gray-300 mt-3 text-center">
                   Also available:{" "}
@@ -2218,169 +2355,6 @@ export default function StudioUniverse() {
           ) : null}
         </div>
       </section>
-      {groupedPages.length ? (
-        <>
-          <SectionIntro id="package" kicker="Studio Package" title="Producer-Ready Materials" lead="Organized like a real optionable package — skim first, dive second." tone="neutral" align="center" />
-          <section className="container mx-auto px-4 pb-14 -mt-6">
-            <AccessGateCard
-              viewerTier={viewerTier}
-              requiredTier="public"
-              title="Producer Materials"
-              subtitle="If a page is marked Priority / Producer / Packaging, it will only show when you view that tier."
-              universe={universe}
-              onCheckout={startStudioCheckout}
-            >
-              <LockedSectionsPreview universe={universe} pages={studioPages} viewerTier={viewerTier} showVault={showVault} />
-              <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8 mb-6 mt-6">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div>
-                    <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Package completeness</div>
-                    <div className="text-2xl font-bold mt-2">
-                      {packageBar.count}/{packageBar.total} ready
-                    </div>
-                    <div className="text-sm opacity-80 mt-2">Add missing pages in Studio Pages.</div>
-                  </div>
-                  <div className="min-w-[220px] flex-1">
-                    <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-800 border overflow-hidden mt-2">
-                      <div className="h-full bg-black dark:bg-white" style={{ width: `${Math.round((packageBar.count / packageBar.total) * 100)}%` }} />
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2 justify-end">
-                      {showVault ? chip("Vault: ON") : chip("Vault: OFF")}
-                      {chip(`Tier: ${tierLabel(viewerTier)}`)}
-                      {chip("Copy-paste friendly")}
-                      {chip("Executive order")}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {studioToc.slice(0, 18).map((t) => {
-                    if (t.kind === "group") {
-                      return (
-                        <a key={t.id} href={`#${t.id}`} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 px-4 py-3 hover:border-amber-400 transition">
-                          <div className="text-xs opacity-60 uppercase tracking-wider">Section</div>
-                          <div className="font-semibold mt-1">{t.label}</div>
-                        </a>
-                      );
-                    }
-                    return (
-                      <a
-                        key={t.id}
-                        href={`#${t.id}`}
-                        className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 px-4 py-3 hover:border-amber-400 transition"
-                        title={t.tag}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="font-semibold">{t.label}</div>
-                          <div className="flex gap-2 items-center">
-                            <span className={tierBadge(t.tier)}>{tierLabel(t.tier)}</span>
-                            {t.vault ? (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
-                                vault
-                              </span>
-                            ) : (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-900/40">
-                                public
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-xs opacity-70 mt-1">{t.tag}</div>
-                      </a>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="space-y-10">
-                {groupedPages.map((g) => (
-                  <div key={g.key} id={`pkg-${g.key}`} className="scroll-mt-28">
-                    <HeaderCard kicker={g.kicker} title={g.title} subtitle={g.lead} rightChips={g.chips || []} align="center" className="mb-6" />
-                    <div className="grid grid-cols-1 gap-5">
-                      {g.pages.map((p) => {
-                        const vis = getPageVisibility(p);
-                        const tag = niceTypeLabel(p.page_type);
-                        const anchorId = `p-${p.id}`;
-                        const pageTier = getPageAccessTier(p);
-                        return (
-                          <div
-                            key={p.id}
-                            id={anchorId}
-                            className="scroll-mt-28 rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm p-6 md:p-8"
-                          >
-                            <div className="flex items-start justify-between gap-3 flex-wrap">
-                              <div>
-                                <div className="flex flex-wrap gap-2 items-center">
-                                  <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">{tag}</div>
-                                  <span className={tierBadge(pageTier)}>{tierLabel(pageTier)}</span>
-                                  {vis === "vault" ? (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700">
-                                      vault
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-900/40">
-                                      public
-                                    </span>
-                                  )}
-                                </div>
-                                <h3 className="text-2xl font-bold mt-2">{p.title || tag}</h3>
-                                {p.excerpt ? <div className="mt-2 text-sm opacity-80">{p.excerpt}</div> : null}
-                              </div>
-                              {p.hero_image_url || p.hero_video_url ? (
-                                <div className="flex gap-2">
-                                  {p.hero_video_url ? (
-                                    <a href={p.hero_video_url} target="_blank" rel="noreferrer" className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm">
-                                      Open Video →
-                                    </a>
-                                  ) : null}
-                                  {p.hero_image_url ? (
-                                    <a href={p.hero_image_url} target="_blank" rel="noreferrer" className="px-4 py-2 rounded-xl border border-gray-300 bg-white/70 dark:bg-gray-950/40 text-sm">
-                                      Open Image →
-                                    </a>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                            </div>
-                            <div className="mt-5">{renderPlainMarkdown(p.content_md)}</div>
-                            <PageAttachmentsRail page={p} />
-                            <div className="mt-6 flex justify-end">
-                              <a href="#package" className="text-sm underline opacity-70 hover:opacity-100">
-                                Back to materials ↑
-                              </a>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </AccessGateCard>
-          </section>
-        </>
-      ) : (
-        <>
-          <SectionIntro
-            id="package"
-            kicker="Studio Package"
-            title="Producer-Ready Materials"
-            lead="No pages are visible at your current tier. Publish pages and/or raise your viewing tier to preview gated packages."
-            tone="neutral"
-            align="center"
-          />
-          <section className="container mx-auto px-4 pb-14 -mt-6">
-            <AccessGateCard
-              viewerTier={viewerTier}
-              requiredTier="priority"
-              title="Priority Window materials are not visible"
-              subtitle="Switch to ?tier=priority or set some pages to Public."
-              universe={universe}
-              onCheckout={startStudioCheckout}
-            />
-            <div className="mt-6">
-              <LockedSectionsPreview universe={universe} pages={studioPages} viewerTier={viewerTier} showVault={showVault} />
-            </div>
-          </section>
-        </>
-      )}
       <section className="container mx-auto px-4 pb-14">
         <div className="rounded-3xl bg-white/80 dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 shadow-sm p-6 md:p-8">
           <div className="flex items-center justify-between gap-4 flex-wrap">

@@ -225,6 +225,29 @@ const OFFER_TIER_OPTIONS = [
   { value: "custom", label: "custom" },
 ];
 
+/* ---------------------------------------------------------
+   ✅ ADDED: Studio-offer filtering so books never show here
+   Why this won't break:
+   - Only filters products loaded into this admin tab.
+   - Does not change DB schema or other pages.
+--------------------------------------------------------- */
+const STUDIO_OFFER_TIERS = new Set(["priority", "producer", "packaging"]);
+
+function isStudioOfferProduct(row) {
+  const md = safeMetaObj(row?.metadata);
+
+  const tier = String(md?.tier || md?.access_tier || md?.required_tier || "").trim().toLowerCase();
+  const offerType = String(md?.offer_type || "").trim().toLowerCase(); // marker we set on save
+  const kind = String(md?.kind || "").trim().toLowerCase();
+  const name = String(row?.name || "").toLowerCase();
+
+  const hasStudioTier = STUDIO_OFFER_TIERS.has(tier);
+  const explicitlyStudio = offerType === "studio_access" || kind === "studio_access";
+  const looksLikeStudioByName = name.includes("studio access");
+
+  return hasStudioTier || explicitlyStudio || looksLikeStudioByName;
+}
+
 // We support link via metadata.universe_id (no schema change).
 async function tryLoadProductsForUniverse(universeId) {
   // Preferred: filter by metadata->>universe_id
@@ -236,7 +259,10 @@ async function tryLoadProductsForUniverse(universeId) {
       .order("updated_at", { ascending: false })
       .limit(200);
 
-    if (!error) return { data: data || [], mode: "metadata" };
+    if (!error) {
+      const onlyOffers = (data || []).filter(isStudioOfferProduct);
+      return { data: onlyOffers, mode: "metadata" };
+    }
   } catch {
     // ignore
   }
@@ -253,7 +279,8 @@ async function tryLoadProductsForUniverse(universeId) {
     return asStr(md?.universe_id) === asStr(universeId);
   });
 
-  return { data: filtered, mode: "client_filter" };
+  const onlyOffers = filtered.filter(isStudioOfferProduct);
+  return { data: onlyOffers, mode: "client_filter" };
 }
 
 export default function StudioPagesTab() {
@@ -347,6 +374,7 @@ export default function StudioPagesTab() {
       JSON.stringify(
         {
           universe_id: selectedUniverseId || "",
+          offer_type: "studio_access", // ✅ ADDED: makes these unambiguously studio offers
           tier: "public",
           access_tier: "public", // ✅ mirrored field for compatibility
           kind: "digital",
@@ -514,6 +542,7 @@ export default function StudioPagesTab() {
 
       const mdForEditor = { ...(md || {}) };
       mdForEditor.universe_id = mdForEditor.universe_id || selectedUniverseId || "";
+      mdForEditor.offer_type = mdForEditor.offer_type || "studio_access"; // ✅ ADDED: persist marker on edit
       mdForEditor.tier = tier;
       mdForEditor.access_tier = mdForEditor.access_tier || tier; // ✅ mirror for compatibility
       mdForEditor.kind = kind;
@@ -920,6 +949,9 @@ export default function StudioPagesTab() {
 
     const metaObj = safeJsonParse(prodMetadataStr, {});
     metaObj.universe_id = selectedUniverseId;
+
+    // ✅ ADDED: enforce studio-offer marker so books can’t get mixed in
+    metaObj.offer_type = "studio_access";
 
     // ✅ enforce tier in BOTH fields so your studio page can read either
     metaObj.tier = prodTier;
@@ -1405,7 +1437,7 @@ export default function StudioPagesTab() {
                     placeholder={`{\n  "universe_id": "${selectedUniverseId}",\n  "tier": "producer",\n  "kind": "digital",\n  "stripe_price_id": "price_...",\n  "currency": "usd"\n}`}
                   />
                   <div className="text-[11px] opacity-60 mt-1">
-                    Advanced: anything here is preserved, but <code>universe_id</code>, <code>tier</code>, <code>access_tier</code>, <code>kind</code>, and Stripe fields are enforced from the form on Save.
+                    Advanced: anything here is preserved, but <code>universe_id</code>, <code>offer_type</code>, <code>tier</code>, <code>access_tier</code>, <code>kind</code>, and Stripe fields are enforced from the form on Save.
                   </div>
                 </label>
 
