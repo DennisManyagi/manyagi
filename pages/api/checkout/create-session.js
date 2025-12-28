@@ -58,7 +58,7 @@ export default async function handler(req, res) {
       telegramId, // from Signals form
 
       // ONE-TIME path
-      product_id, // required for one-time purchase
+      product_id, // required for one-time purchase (Supabase products.id)
       quantity = 1,
       user_id = null,
 
@@ -144,10 +144,10 @@ export default async function handler(req, res) {
     const needsShipping =
       !!meta.printful_sync_variant_id || meta.fulfill_with_printful === true;
 
-    // ✅ NEW: Studio Access lane (Option A)
-    // If product.metadata.kind === "studio_access", require login and attach entitlement metadata
-    const kind = asStr(meta.kind).trim().toLowerCase();
-    const isStudioAccess = kind === "studio_access";
+    // ✅ FIX: Studio Access detection must include offer_type OR kind
+    // This prevents subtle mismatches where products use metadata.offer_type = "studio_access"
+    const offerType = asStr(meta.offer_type || meta.kind).trim().toLowerCase();
+    const isStudioAccess = offerType === "studio_access";
 
     // Determine user_id:
     // - for normal products: keep your existing behavior (use body user_id if provided)
@@ -167,9 +167,11 @@ export default async function handler(req, res) {
     // Studio metadata validation (only for studio_access)
     let studioUniverseId = null;
     let studioTier = "";
+    let studioUniverseSlug = "";
     if (isStudioAccess) {
       studioUniverseId = asStr(meta.universe_id).trim();
       studioTier = normalizeStudioTier(meta.tier);
+      studioUniverseSlug = asStr(meta.universe_slug).trim();
 
       if (!studioUniverseId) {
         return res.status(400).json({
@@ -182,6 +184,11 @@ export default async function handler(req, res) {
         });
       }
     }
+
+    // ✅ safer studio cancel URL (won't create weird empty /studios/)
+    const studioCancelUrl = studioUniverseSlug
+      ? `${baseUrl}/studios/${studioUniverseSlug}`
+      : `${baseUrl}/studios`;
 
     // build Checkout Session
     const session = await stripe.checkout.sessions.create({
@@ -207,9 +214,7 @@ export default async function handler(req, res) {
 
       cancel_url:
         cancel_url ||
-        (isStudioAccess
-          ? `${baseUrl}/studios/${asStr(meta.universe_slug || "")}`.replace(/\/$/, "") || `${baseUrl}/studios`
-          : `${baseUrl}/checkout/cancelled`),
+        (isStudioAccess ? studioCancelUrl : `${baseUrl}/checkout/cancelled`),
 
       metadata: {
         // existing fields
@@ -219,11 +224,18 @@ export default async function handler(req, res) {
         product_name: String(product.name || ""),
         affiliate_code: affiliate_code || "",
 
-        // ✅ NEW: studio entitlement fields (only populated when studio_access)
-        type: isStudioAccess ? "studio_access" : "",
+        // ✅ FIX: webhook routing should be deterministic
+        // - studio access must be "studio_access"
+        // - non-studio should be "product_order" (not blank)
+        type: isStudioAccess ? "studio_access" : "product_order",
+
+        // ✅ studio entitlement fields (only populated when studio_access)
         universe_id: isStudioAccess ? String(studioUniverseId) : "",
         tier: isStudioAccess ? String(studioTier) : "",
         user_id: isStudioAccess ? String(resolvedUserId || "") : "",
+
+        // ✅ include universe_slug for better webhook emails / links
+        universe_slug: isStudioAccess ? String(studioUniverseSlug || "") : "",
       },
     });
 
@@ -248,7 +260,7 @@ export default async function handler(req, res) {
         metadata: meta || {},
 
         // ✅ extra trace info for studio purchases
-        kind: isStudioAccess ? "studio_access" : kind || null,
+        kind: isStudioAccess ? "studio_access" : offerType || null,
         universe_id: isStudioAccess ? studioUniverseId : null,
         tier: isStudioAccess ? studioTier : null,
       },

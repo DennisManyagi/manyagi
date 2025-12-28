@@ -33,8 +33,10 @@ export default async function handler(req, res) {
     switch (event.type) {
       case 'checkout.session.completed': {
         // pull full session w/ expansions so we get payment info
+        // ✅ FIX: DO NOT expand shipping_details (Stripe does not allow expanding it)
+        // customer_details + shipping_details are already included on the session payload when present.
         const session = await stripe.checkout.sessions.retrieve(event.data.object.id, {
-          expand: ['customer_details', 'shipping_details', 'payment_intent'],
+          expand: ['payment_intent'],
         });
 
         //
@@ -174,23 +176,58 @@ export default async function handler(req, res) {
             break;
           }
 
+          // ✅ FIX: Keep best tier if they already have one (prevents downgrades on re-purchase)
+          const TIER_RANK = { public: 0, priority: 1, producer: 2, packaging: 3 };
+          const rank = (t) => TIER_RANK[(t || '').toLowerCase()] ?? 0;
+          const bestTier = (a, b) => (rank(a) >= rank(b) ? a : b);
+
           try {
-            await supabaseAdmin.from('studio_entitlements').upsert(
+            const { data: existing, error: existingErr } = await supabaseAdmin
+              .from('studio_entitlements')
+              .select('tier')
+              .eq('user_id', user_id)
+              .eq('universe_id', universe_id)
+              .maybeSingle();
+
+            if (existingErr) {
+              console.warn('[studio_access] existing entitlement lookup failed:', existingErr.message);
+            }
+
+            const finalTier = existing?.tier ? bestTier(existing.tier, tier) : tier;
+
+            // ✅ FIX: Upsert by the REAL identity (user_id, universe_id) — requires your unique index
+            const { error: upsertErr } = await supabaseAdmin.from('studio_entitlements').upsert(
               {
                 user_id,
                 universe_id,
-                tier,
+                entitlement: 'studio_access', // ✅ ADDED: required entitlement marker for studio access
+                tier: finalTier,
                 status: 'active',
                 expires_at: expires.toISOString(),
                 stripe_session_id: session.id,
                 stripe_customer_id: session.customer ? String(session.customer) : null,
-                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
               },
-              { onConflict: 'stripe_session_id' }
+              { onConflict: 'user_id,universe_id' }
             );
+
+            if (upsertErr) {
+              console.error('[studio_access] upsert error:', upsertErr.message);
+              throw upsertErr;
+            }
           } catch (dbErr) {
             console.error('[studio_access] upsert failed:', dbErr?.message || dbErr);
             throw dbErr;
+          }
+
+          // ✅ FIX: Mark the studio order paid so it doesn't stay pending
+          try {
+            await supabaseAdmin
+              .from('orders')
+              .update({ status: 'paid', updated_at: new Date().toISOString() })
+              .eq('stripe_session_id', session.id);
+          } catch (e) {
+            console.warn('[studio_access] orders update failed:', e?.message || e);
           }
 
           // ✅ OPTIONAL: email receipt/access (safe + uses universe_slug if present)
@@ -198,15 +235,16 @@ export default async function handler(req, res) {
           if (to) {
             try {
               const site = process.env.NEXT_PUBLIC_SITE_URL || 'https://manyagi.net';
-              const link = universe_slug
-                ? `${site}/studios/${universe_slug}`
-                : `${site}/studios`;
+              const link = universe_slug ? `${site}/studios/${universe_slug}` : `${site}/studios`;
 
               const prettyTier =
-                tier === 'priority' ? 'Priority Window' :
-                tier === 'producer' ? 'Producer Packet' :
-                tier === 'packaging' ? 'Packaging Track' :
-                tier;
+                tier === 'priority'
+                  ? 'Priority Window'
+                  : tier === 'producer'
+                  ? 'Producer Packet'
+                  : tier === 'packaging'
+                  ? 'Packaging Track'
+                  : tier;
 
               const html = `
                 <h1>Access Granted ✅</h1>
@@ -275,8 +313,7 @@ export default async function handler(req, res) {
                 .maybeSingle();
 
               const meta = product?.metadata || {};
-              const syncVariantId =
-                meta.printful_sync_variant_id || meta.printful_sync_variant || null;
+              const syncVariantId = meta.printful_sync_variant_id || meta.printful_sync_variant || null;
 
               const haveShippingAddress = Boolean(session?.shipping_details?.address?.line1);
 
@@ -331,9 +368,7 @@ export default async function handler(req, res) {
                     .update({
                       fulfillment_provider: 'printful',
                       fulfillment_status: 'error',
-                      fulfillment_error: String(
-                        pfErr?.response?.data?.error || pfErr.message || 'unknown'
-                      ),
+                      fulfillment_error: String(pfErr?.response?.data?.error || pfErr.message || 'unknown'),
                       updated_at: new Date().toISOString(),
                     })
                     .eq('stripe_session_id', session.id);
@@ -387,7 +422,9 @@ export default async function handler(req, res) {
           invoice?.metadata?.telegramId;
 
         if (!telegramId || isNaN(telegramId)) {
-          console.warn(`[stripe-webhook] Missing/invalid Telegram ID, event=${event.type}, invoice=${invoice.id}`);
+          console.warn(
+            `[stripe-webhook] Missing/invalid Telegram ID, event=${event.type}, invoice=${invoice.id}`
+          );
           break;
         }
 

@@ -17,13 +17,14 @@ const pickProductImage = (p) =>
   p?.image ||
   "/placeholder.png";
 /**
- * Offers have tier/access_tier/required_tier in metadata.
- * Books do NOT.
+ * ✅ Bulletproof Studio Offer detection
+ * Studio offers MUST have metadata.offer_type = "studio_access"
+ * (or metadata.kind = "studio_access" if you prefer that key)
  */
 const isStudioOfferProduct = (p) => {
   const m = p?.metadata || {};
-  const tier = m?.tier ?? m?.access_tier ?? m?.required_tier;
-  return tier !== undefined && tier !== null && String(tier).trim() !== "";
+  const offerType = safeStr(m.offer_type || m.kind).toLowerCase();
+  return offerType === "studio_access";
 };
 const isBookProduct = (p) => !isStudioOfferProduct(p);
 function matchesUniverseForProduct(product, universe) {
@@ -124,10 +125,10 @@ function normalizeStudioOfferRow(row) {
 // "Offer rows" only (avoid books + other products)
 function isStudioOfferRow(row) {
   const md = safeJson(row?.metadata, {});
-  const offerType = safeStr(md?.offer_type).toLowerCase();
+  const offerType = safeStr(md?.offer_type || md?.kind).toLowerCase();
   const tier = normalizeTier(md?.tier || md?.access_tier || md?.required_tier || "public");
-  // ✅ Strong filter: offer_type must be studio_access
-  // Temporarily removed: if (offerType !== "studio_access") return false;
+  // ✅ Strong filter
+  if (offerType !== "studio_access") return false;
   // ✅ Must be one of our tiers
   if (!STUDIO_TIER_ORDER.includes(tier)) return false;
   return true;
@@ -254,13 +255,6 @@ function SpotifyEmbed({ url, title = "Spotify" }) {
         title={title}
       />
     </div>
-  );
-}
-function chip(text) {
-  return (
-    <span className="text-[11px] px-3 py-1 rounded-full bg-white/80 text-gray-800 border border-gray-200/70 dark:bg-gray-900/60 dark:text-gray-100 dark:border-gray-700">
-      {text}
-    </span>
   );
 }
 /* ------------------------------
@@ -475,6 +469,13 @@ function renderPlainMarkdown(md = "") {
 /* ------------------------------
    UI cards
 --------------------------------*/
+function chip(text) {
+  return (
+    <span className="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+      {text}
+    </span>
+  );
+}
 function HeaderCard({ kicker, title, subtitle, rightChips = [], align = "left", className = "", children }) {
   const center = align === "center";
   return (
@@ -493,7 +494,9 @@ function HeaderCard({ kicker, title, subtitle, rightChips = [], align = "left", 
         {rightChips?.length ? (
           <div className={`flex flex-wrap gap-2 ${center ? "justify-center w-full" : "justify-end"}`}>
             {rightChips.map((c) => (
-              <span key={c}>{chip(c)}</span>
+              <span key={c} className="text-[11px] px-3 py-1 rounded-full bg-white/80 text-gray-800 border border-gray-200/70 dark:bg-gray-900/60 dark:text-gray-100 dark:border-gray-700">
+                {c}
+              </span>
             ))}
           </div>
         ) : null}
@@ -768,6 +771,10 @@ function normalizeTier(t) {
   if (ACCESS_TIERS.includes(v)) return v;
   return "public";
 }
+function normalizeTierOrNull(t) {
+  const v = safeStr(t).toLowerCase();
+  return ACCESS_TIERS.includes(v) ? v : null;
+}
 const TIER_RANK = { public: 0, priority: 1, producer: 2, packaging: 3 };
 function canViewTier(viewerTier, pageTier) {
   const vt = TIER_RANK[normalizeTier(viewerTier)] ?? 0;
@@ -897,7 +904,7 @@ function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, o
     </div>
   );
 }
-function PackagesBar({ universe, viewerTier, showVault, onCheckout, offers = [], offersLoading = false }) {
+function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offers = [], offersLoading = false }) {
   const fallbackTiers = [
     {
       key: "priority",
@@ -939,6 +946,15 @@ function PackagesBar({ universe, viewerTier, showVault, onCheckout, offers = [],
   const tiers = ["priority", "producer", "packaging"]
     .map((k) => byTier.get(k))
     .filter(Boolean);
+  const goTier = (tierKey) => {
+    const href = universe?.slug
+      ? `/studios/${universe.slug}?tier=${tierKey}${showVault ? "&vault=1" : ""}#package`
+      : "#";
+    // preview-only
+    window.history.pushState({}, "", href);
+    // optionally scroll
+    document.getElementById("package")?.scrollIntoView({ behavior: "smooth" });
+  };
   return (
     <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -956,35 +972,35 @@ function PackagesBar({ universe, viewerTier, showVault, onCheckout, offers = [],
         </div>
         {/* tier buttons stay the same */}
         <div className="flex gap-2 flex-wrap justify-end">
-          <Link
-            href={universe?.slug ? `/studios/${universe.slug}?tier=public${showVault ? "&vault=1" : ""}` : "#"}
-            className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40 text-sm font-semibold"
+          <button
+            onClick={() => goTier('public')}
+            className={`px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40 text-sm font-semibold ${normalizeTier(uiTier) === 'public' ? 'bg-amber-50/70 dark:bg-amber-950/10 border-amber-400/70' : ''}`}
           >
             Public
-          </Link>
-          <Link
-            href={universe?.slug ? `/studios/${universe.slug}?tier=priority${showVault ? "&vault=1" : ""}` : "#"}
-            className="px-4 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100 text-sm font-semibold"
+          </button>
+          <button
+            onClick={() => goTier('priority')}
+            className={`px-4 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100 text-sm font-semibold ${normalizeTier(uiTier) === 'priority' ? 'bg-amber-50/70 dark:bg-amber-950/10 border-amber-400/70' : ''}`}
           >
             Priority
-          </Link>
-          <Link
-            href={universe?.slug ? `/studios/${universe.slug}?tier=producer${showVault ? "&vault=1" : ""}` : "#"}
-            className="px-4 py-2 rounded-xl border border-sky-300 bg-sky-50 text-sky-900 dark:bg-sky-950/20 dark:text-sky-100 text-sm font-semibold"
+          </button>
+          <button
+            onClick={() => goTier('producer')}
+            className={`px-4 py-2 rounded-xl border border-sky-300 bg-sky-50 text-sky-900 dark:bg-sky-950/20 dark:text-sky-100 text-sm font-semibold ${normalizeTier(uiTier) === 'producer' ? 'bg-amber-50/70 dark:bg-amber-950/10 border-amber-400/70' : ''}`}
           >
             Producer
-          </Link>
-          <Link
-            href={universe?.slug ? `/studios/${universe.slug}?tier=packaging${showVault ? "&vault=1" : ""}` : "#"}
-            className="px-4 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 text-sm font-semibold"
+          </button>
+          <button
+            onClick={() => goTier('packaging')}
+            className={`px-4 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-800 dark:bg-gray-900 dark:text-gray-100 text-sm font-semibold ${normalizeTier(uiTier) === 'packaging' ? 'bg-amber-50/70 dark:bg-amber-950/10 border-amber-400/70' : ''}`}
           >
             Packaging
-          </Link>
+          </button>
         </div>
       </div>
       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
         {tiers.map((t) => {
-          const active = normalizeTier(viewerTier) === t.key;
+          const active = normalizeTier(uiTier) === t.key;
           return (
             <div
               key={t.key}
@@ -1025,12 +1041,12 @@ function PackagesBar({ universe, viewerTier, showVault, onCheckout, offers = [],
                 >
                   Unlock →
                 </button>
-                <Link
-                  href={universe?.slug ? `/studios/${universe.slug}?tier=${t.key}${showVault ? "&vault=1" : ""}#package` : "#"}
+                <button
+                  onClick={() => goTier(t.key)}
                   className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40 text-sm font-semibold"
                 >
                   Preview
-                </Link>
+                </button>
               </div>
             </div>
           );
@@ -1166,7 +1182,7 @@ function groupStudioPages(pages = [], showVault = false, viewerTier = "public") 
   });
   return buckets.filter((b) => b.pages.length > 0);
 }
-function LockedSectionsPreview({ universe, pages = [], viewerTier = "public", showVault = false }) {
+function LockedSectionsPreview({ universe, pages = [], viewerTier = "public", showVault = false, onCheckout }) {
   const locked = useMemo(() => {
     const lockedByTier = [];
     const lockedByVault = [];
@@ -1219,24 +1235,33 @@ function LockedSectionsPreview({ universe, pages = [], viewerTier = "public", sh
             <div className="text-sm font-semibold">Unlock access</div>
             <div className="text-xs opacity-80 mt-1">Upgrade tier above to preview locked sections.</div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Link
-                href={universe?.slug ? `/studios/${universe.slug}?tier=priority${showVault ? "&vault=1" : ""}#package` : "#"}
+              <button
+                onClick={() => {
+                  document.getElementById("package")?.scrollIntoView({ behavior: "smooth" });
+                  if (typeof onCheckout === "function") onCheckout("priority");
+                }}
                 className="px-3 py-2 rounded-xl bg-white/10 dark:bg-black/10 border border-white/20 dark:border-black/20 text-xs font-semibold"
               >
                 Priority →
-              </Link>
-              <Link
-                href={universe?.slug ? `/studios/${universe.slug}?tier=producer${showVault ? "&vault=1" : ""}#package` : "#"}
+              </button>
+              <button
+                onClick={() => {
+                  document.getElementById("package")?.scrollIntoView({ behavior: "smooth" });
+                  if (typeof onCheckout === "function") onCheckout("producer");
+                }}
                 className="px-3 py-2 rounded-xl bg-white/10 dark:bg-black/10 border border-white/20 dark:border-black/20 text-xs font-semibold"
               >
                 Producer →
-              </Link>
-              <Link
-                href={universe?.slug ? `/studios/${universe.slug}?tier=packaging${showVault ? "&vault=1" : ""}#package` : "#"}
+              </button>
+              <button
+                onClick={() => {
+                  document.getElementById("package")?.scrollIntoView({ behavior: "smooth" });
+                  if (typeof onCheckout === "function") onCheckout("packaging");
+                }}
                 className="px-3 py-2 rounded-xl bg-white/10 dark:bg-black/10 border border-white/20 dark:border-black/20 text-xs font-semibold"
               >
                 Packaging →
-              </Link>
+              </button>
             </div>
           </div>
         </div>
@@ -1433,9 +1458,18 @@ function pickSoundtrackCandidate({ mediaPosts = [], audioItems = [] }) {
 export default function StudioUniverse() {
   const router = useRouter();
   const { slug } = router.query;
-  const showVault = useMemo(() => String(router.query?.vault || "") === "1", [router.query?.vault]);
-  const requestedTier = useMemo(() => normalizeTier(router.query?.tier), [router.query?.tier]);
-  const [viewerTier, setViewerTier] = useState("public");
+  const [entitledTier, setEntitledTier] = useState("public");
+  // REAL access tier
+  const viewerTier = useMemo(() => normalizeTier(entitledTier), [entitledTier]);
+  // vault gating
+  const canSeeVault = useMemo(() => canViewTier(viewerTier, "packaging"), [viewerTier]);
+  const showVault = useMemo(
+    () => canSeeVault && String(router.query?.vault || "") === "1",
+    [canSeeVault, router.query?.vault]
+  );
+  const previewTier = useMemo(() => normalizeTierOrNull(router.query?.tier), [router.query?.tier]);
+  // ✅ UI tier (PREVIEW) — can be controlled via URL buttons, but does not grant access
+  const uiTier = useMemo(() => previewTier || viewerTier, [previewTier, viewerTier]);
   const [universe, setUniverse] = useState(null);
   const [assets, setAssets] = useState([]);
   const [studioPages, setStudioPages] = useState([]);
@@ -1445,10 +1479,6 @@ export default function StudioUniverse() {
   const [bookProducts, setBookProducts] = useState([]);
   const [studioOffers, setStudioOffers] = useState([]);
   const [offersLoading, setOffersLoading] = useState(false);
-  // Keep URL tier in sync as a default (entitlements can override later)
-  useEffect(() => {
-    setViewerTier(requestedTier || "public");
-  }, [requestedTier]);
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
@@ -1494,28 +1524,28 @@ export default function StudioUniverse() {
         const scoped = normalized.filter((it) => matchesUniverseIp(it, u));
         setMediaPosts(scoped);
       } catch (err) {
-        console.error("studio media fetch error:", err);
+        console.error("studio media fetch fetch error:", err);
         setMediaPosts([]);
       }
       setLoading(false);
       // entitlement lookup overrides viewerTier
       try {
-        const { data: auth } = await supabase.auth.getUser();
-        const user = auth?.user;
+        const { data: sess } = await supabase.auth.getSession();
+        const user = sess?.session?.user;
         if (user?.id) {
-          const { data: ent } = await supabase
+          const { data: ent, error: entErr } = await supabase
             .from("studio_entitlements")
-            .select("tier, status, expires_at, created_at")
+            .select("tier,status,expires_at")
             .eq("user_id", user.id)
             .eq("universe_id", u.id)
-            .eq("status", "active")
-            .order("created_at", { ascending: false });
-          let best = "public";
-          (ent || []).forEach((e) => {
-            const t = normalizeTier(e.tier);
-            if ((TIER_RANK[t] ?? 0) > (TIER_RANK[best] ?? 0)) best = t;
-          });
-          setViewerTier(best);
+            .maybeSingle();
+          if (entErr) console.warn("entitlement lookup failed:", entErr.message);
+          const now = new Date();
+          const isActive =
+            ent &&
+            (ent.status || "active") === "active" &&
+            (!ent.expires_at || new Date(ent.expires_at) > now);
+          setEntitledTier(isActive ? normalizeTier(ent.tier) : "public");
         }
       } catch (e) {
         console.warn("entitlement lookup failed", e);
@@ -1526,7 +1556,6 @@ export default function StudioUniverse() {
     };
   }, [slug]);
   useEffect(() => {
-    if (!universe?.id) return;
     if (!universe?.id) return;
     let cancelled = false;
     (async () => {
@@ -1542,16 +1571,23 @@ export default function StudioUniverse() {
   useEffect(() => {
     if (!universe?.id) return;
     async function loadTierProducts() {
-      const { data: products } = await supabase
+      const { data: products, error } = await supabase
         .from("products")
-        .select("id, metadata")
+        .select("id, metadata, updated_at")
         .eq("status", "active")
-        .filter("metadata->>universe_id", "eq", universe.id);
+        .filter("metadata->>universe_id", "eq", String(universe.id))
+        .order("updated_at", { ascending: false });
+      if (error) console.warn("loadTierProducts error:", error.message);
       const map = {};
       (products || []).forEach((p) => {
-        const meta = safeJson(p.metadata);
-        const tier = normalizeTier(meta.tier);
-        if (tier) map[tier] = p.id;
+        const meta = safeJson(p.metadata, {});
+        const offerType = safeStr(meta.offer_type || meta.kind).toLowerCase();
+        // ✅ ONLY studio offers
+        if (offerType !== "studio_access") return;
+        const tier = normalizeTier(meta.tier || meta.access_tier || meta.required_tier);
+        if (!tier) return;
+        // ✅ store Supabase product.id (newest wins due to ordering)
+        if (!map[tier]) map[tier] = p.id;
       });
       setTierProducts(map);
     }
@@ -1793,12 +1829,13 @@ export default function StudioUniverse() {
   }, [groupedPages]);
   async function startStudioCheckout(tier) {
     try {
-      const { data: auth } = await supabase.auth.getSession();
-      const token = auth?.session?.access_token;
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess?.session?.access_token;
       if (!token) {
         router.push(`/login?next=${encodeURIComponent(router.asPath)}`);
         return;
       }
+      // ✅ tierProducts should store product.id (Supabase row id)
       const product_id = tierProducts[normalizeTier(tier)];
       if (!product_id) throw new Error(`No active product found for ${tier} in this universe.`);
       const res = await fetch("/api/checkout/create-session", {
@@ -1818,7 +1855,7 @@ export default function StudioUniverse() {
   }
   if (loading) {
     return (
-      <section className="container mx-auto px-4 py-16">
+      <section className="container mx-auto px-4 px-4 py-16">
         <div className="opacity-70">Loading universe…</div>
       </section>
     );
@@ -1834,17 +1871,17 @@ export default function StudioUniverse() {
     );
   }
   const navItems = [
-    { href: "#one-sheet", label: "One-Sheet" },
-    ...(trailerUrl ? [{ href: "#trailer", label: "Trailer" }] : []),
-    ...(audioItems.length || soundtrackResolved ? [{ href: "#audio", label: "Sound" }] : []),
-    ...(characterAssets.length ? [{ href: "#characters", label: "Characters" }] : []),
-    ...(hasWorldMapSection ? [{ href: "#world-map", label: "World Map" }] : []),
-    ...(bookProducts.length ? [{ href: "#books", label: "Books" }] : []),
-    { href: "#visuals", label: "Merch" },
-    { href: "#vault", label: "Adaptation Assets" },
-    ...(groupedPages.length ? [{ href: "#package", label: "Producer Materials" }] : []),
-    { href: "#contact", label: "Options" },
-  ];
+  { href: "#one-sheet", label: "One-Sheet" },
+  ...(trailerUrl ? [{ href: "#trailer", label: "Trailer" }] : []),
+  ...(characterAssets.length ? [{ href: "#characters", label: "Characters" }] : []),
+  ...(hasWorldMapSection ? [{ href: "#world-map", label: "World Map" }] : []),
+  ...(audioItems.length || soundtrackResolved ? [{ href: "#audio", label: "Sound" }] : []),
+  ...(groupedPages.length ? [{ href: "#package", label: "Producer Materials" }] : []),
+  ...(bookProducts.length ? [{ href: "#books", label: "Books" }] : []),
+  { href: "#visuals", label: "Merch" },
+  { href: "#vault", label: "Adaptation Assets" },
+  { href: "#contact", label: "Options" },
+];
   const resolvedSoundtrackUrl = soundtrackResolved?.url || "";
   const isSoundtrackSpotify = resolvedSoundtrackUrl.includes("spotify.com");
   const isSoundtrackYT = isYoutube(resolvedSoundtrackUrl);
@@ -1929,6 +1966,7 @@ export default function StudioUniverse() {
         <PackagesBar
           universe={universe}
           viewerTier={viewerTier}
+          uiTier={uiTier}
           showVault={showVault}
           onCheckout={startStudioCheckout}
           offers={studioOffers}
@@ -2029,6 +2067,68 @@ export default function StudioUniverse() {
           </section>
         </>
       ) : null}
+      {characterAssets.length ? (
+        <>
+          <SectionIntro id="characters" kicker="Cast" title="Characters" lead="Core cast — roles, identities, and portraits for deck continuity." tone="neutral" align="center" />
+          <section className="container mx-auto px-4 pb-14 -mt-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {characterAssets.map((c) => (
+                <div key={c.id} className="rounded-3xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm">
+                  {getThumb(c) ? (
+                    <img src={getThumb(c)} alt={c.title || "Character"} className="w-full h-64 object-cover" loading="lazy" />
+                  ) : (
+                    <div className="w-full h-64 bg-gray-100 dark:bg-gray-800" />
+                  )}
+                  <div className="p-4">
+                    <div className="font-semibold text-lg">{c.title || "Character"}</div>
+                    {c.description ? <div className="text-sm opacity-80 mt-2 whitespace-pre-wrap leading-relaxed">{c.description}</div> : null}
+                    {c?.metadata?.role || c?.metadata?.character_name ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {c?.metadata?.character_name ? chip(String(c.metadata.character_name)) : null}
+                        {c?.metadata?.role ? chip(String(c.metadata.role)) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : null}
+      {hasWorldMapSection ? (
+        <>
+          <SectionIntro id="world-map" kicker="World" title="World Map" lead="Geography, regions, and zones — the big picture." tone="neutral" align="center" />
+          <section className="container mx-auto px-4 pb-14 -mt-6">
+            {featuredWorldMapUrl && worldMapAssets.length === 0 ? (
+              <div className="rounded-3xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm">
+                <img src={featuredWorldMapUrl} alt="World map" className="w-full h-[520px] object-cover" loading="lazy" />
+                <div className="p-4">
+                  <div className="font-semibold">World Map</div>
+                  <div className="text-sm opacity-70 mt-1">Featured map</div>
+                </div>
+              </div>
+            ) : null}
+            {worldMapAssets.length ? (
+              <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2 snap-x snap-mandatory">
+                {worldMapAssets.map((m) => (
+                  <div key={m.id} className="snap-center shrink-0 w-[92%] md:w-[70%] rounded-3xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm">
+                    <img src={getThumb(m) || m.external_url} alt={m.title || "World map"} className="w-full h-[420px] object-cover" loading="lazy" />
+                    <div className="p-4">
+                      <div className="font-semibold">{m.title || "World Map"}</div>
+                      {m.description ? <div className="text-sm opacity-70 mt-1">{m.description}</div> : null}
+                      {m.external_url || getThumb(m) ? (
+                        <a className="text-sm underline mt-3 inline-block" href={m.external_url || getThumb(m)} target="_blank" rel="noreferrer">
+                          Open full size →
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </>
+      ) : null}
       {(audioItems.length || soundtrackResolved) ? (
         <>
           <SectionIntro
@@ -2116,75 +2216,89 @@ export default function StudioUniverse() {
           </section>
         </>
       ) : null}
-      {characterAssets.length ? (
-        <>
-          <SectionIntro id="characters" kicker="Cast" title="Characters" lead="Core cast — roles, identities, and portraits for deck continuity." tone="neutral" align="center" />
-          <section className="container mx-auto px-4 pb-14 -mt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {characterAssets.map((c) => (
-                <div key={c.id} className="rounded-3xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm">
-                  {getThumb(c) ? (
-                    <img src={getThumb(c)} alt={c.title || "Character"} className="w-full h-64 object-cover" loading="lazy" />
-                  ) : (
-                    <div className="w-full h-64 bg-gray-100 dark:bg-gray-800" />
-                  )}
-                  <div className="p-4">
-                    <div className="font-semibold text-lg">{c.title || "Character"}</div>
-                    {c.description ? <div className="text-sm opacity-80 mt-2 whitespace-pre-wrap leading-relaxed">{c.description}</div> : null}
-                    {c?.metadata?.role || c?.metadata?.character_name ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {c?.metadata?.character_name ? chip(String(c.metadata.character_name)) : null}
-                        {c?.metadata?.role ? chip(String(c.metadata.role)) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </>
-      ) : null}
-      {hasWorldMapSection ? (
-        <>
-          <SectionIntro id="world-map" kicker="World" title="World Map" lead="Geography, regions, and zones — the big picture." tone="neutral" align="center" />
-          <section className="container mx-auto px-4 pb-14 -mt-6">
-            {featuredWorldMapUrl && worldMapAssets.length === 0 ? (
-              <div className="rounded-3xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm">
-                <img src={featuredWorldMapUrl} alt="World map" className="w-full h-[520px] object-cover" loading="lazy" />
-                <div className="p-4">
-                  <div className="font-semibold">World Map</div>
-                  <div className="text-sm opacity-70 mt-1">Featured map</div>
+      <SectionIntro
+        id="package"
+        kicker="Producer Materials"
+        title="Studio Pages"
+        lead="Deck-ready sections grouped for fast executive review."
+        tone="neutral"
+        align="center"
+      />
+      <section className="container mx-auto px-4 pb-14 -mt-6">
+        {/* optional: shows titles of locked pages so buyers see what they unlock */}
+        <LockedSectionsPreview
+          universe={universe}
+          pages={studioPages}
+          viewerTier={viewerTier}
+          showVault={showVault}
+          onCheckout={startStudioCheckout}
+        />
+        {!groupedPages.length ? (
+          <div className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm p-8 text-center">
+            <div className="text-lg font-bold">No studio pages published yet</div>
+            <div className="opacity-80 mt-2">Publish pages in Admin → Studio Pages.</div>
+          </div>
+        ) : (
+          <div className="space-y-10">
+            {groupedPages.map((g) => (
+              <div key={g.key} id={`pkg-${g.key}`}>
+                <HeaderCard
+                  kicker={g.kicker}
+                  title={g.title}
+                  subtitle={g.lead}
+                  rightChips={g.chips || []}
+                  align="left"
+                  className="mb-5"
+                />
+                <div className="space-y-5">
+                  {g.pages.map((p) => {
+                    const requiredTier = getPageAccessTier(p);
+                    const tag = niceTypeLabel(p.page_type);
+                    const pageTitle = p.title || tag;
+                    const md = safeJson(p.metadata, {});
+                    const body = safeStr(p.content_md || md.content || md.body || md.markdown || p.content || "");
+                    return (
+                      <AccessGateCard
+                        key={p.id}
+                        viewerTier={viewerTier}
+                        requiredTier={requiredTier}
+                        title={pageTitle}
+                        subtitle={`${tag}${getPageVisibility(p) === "vault" ? " • Vault" : ""}`}
+                        universe={universe}
+                        onCheckout={startStudioCheckout}
+                      >
+                        <div id={`p-${p.id}`} className="rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-6 md:p-8">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div>
+                              <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">{tag}</div>
+                              <div className="text-2xl font-bold mt-2">{pageTitle}</div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <span className={tierBadge(requiredTier)}>{tierLabel(requiredTier)}</span>
+                                {getPageVisibility(p) === "vault" ? chip("vault") : null}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-6">
+                            {body ? renderPlainMarkdown(body) : <div className="text-sm opacity-70">No content yet.</div>}
+                          </div>
+                          <PageAttachmentsRail page={p} />
+                        </div>
+                      </AccessGateCard>
+                    );
+                  })}
                 </div>
               </div>
-            ) : null}
-            {worldMapAssets.length ? (
-              <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2 snap-x snap-mandatory">
-                {worldMapAssets.map((m) => (
-                  <div key={m.id} className="snap-center shrink-0 w-[92%] md:w-[70%] rounded-3xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm">
-                    <img src={getThumb(m) || m.external_url} alt={m.title || "World map"} className="w-full h-[420px] object-cover" loading="lazy" />
-                    <div className="p-4">
-                      <div className="font-semibold">{m.title || "World Map"}</div>
-                      {m.description ? <div className="text-sm opacity-70 mt-1">{m.description}</div> : null}
-                      {m.external_url || getThumb(m) ? (
-                        <a className="text-sm underline mt-3 inline-block" href={m.external_url || getThumb(m)} target="_blank" rel="noreferrer">
-                          Open full size →
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </section>
-        </>
-      ) : null}
-{bookProducts.length ? (
+            ))}
+          </div>
+        )}
+      </section>
+      {bookProducts.length ? (
   <>
     <SectionIntro
       id="books"
       kicker="Publishing"
       title="Books & Collections"
-      lead="Publishing products linked to this universe (matched by universe_id)."
+      lead="Publishing products linked to this universe (matched by universe_id with smart fallback matching)."
       tone="neutral"
       align="center"
     />
