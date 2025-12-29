@@ -904,7 +904,7 @@ function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, o
     </div>
   );
 }
-function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offers = [], offersLoading = false }) {
+function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offers = [], offersLoading = false, entitlement }) {
   const fallbackTiers = [
     {
       key: "priority",
@@ -1001,6 +1001,13 @@ function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offe
       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
         {tiers.map((t) => {
           const active = normalizeTier(uiTier) === t.key;
+          const unlocked = canViewTier(viewerTier, t.key);
+          let daysLeft = null;
+          if (unlocked && entitlement && entitlement.expires_at) {
+            const expiresDate = new Date(entitlement.expires_at);
+            const now = new Date();
+            daysLeft = Math.ceil((expiresDate - now) / (1000 * 60 * 60 * 24));
+          }
           return (
             <div
               key={t.key}
@@ -1035,12 +1042,26 @@ function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offe
                 ))}
               </ul>
               <div className="mt-4 flex gap-2">
-                <button
-                  onClick={() => (typeof onCheckout === "function" ? onCheckout(t.key) : null)}
-                  className="flex-1 px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-semibold text-center"
-                >
-                  Unlock →
-                </button>
+                {unlocked ? (
+                  <div className="flex flex-col gap-2 flex-1">
+                    <div className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold text-center">
+                      Unlocked ✓
+                    </div>
+                    <button
+                      onClick={() => downloadProducerPacket(t.key)}
+                      className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-semibold"
+                    >
+                      Download {tierLabel(t.key)} Packet →
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => (typeof onCheckout === "function" ? onCheckout(t.key) : null)}
+                    className="flex-1 px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-semibold text-center"
+                  >
+                    Unlock →
+                  </button>
+                )}
                 <button
                   onClick={() => goTier(t.key)}
                   className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40 text-sm font-semibold"
@@ -1048,6 +1069,9 @@ function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offe
                   Preview
                 </button>
               </div>
+              {unlocked && daysLeft !== null && daysLeft > 0 ? (
+                <div className="text-xs opacity-70 text-center mt-1">{daysLeft} days remaining</div>
+              ) : null}
             </div>
           );
         })}
@@ -1459,8 +1483,14 @@ export default function StudioUniverse() {
   const router = useRouter();
   const { slug } = router.query;
   const [entitledTier, setEntitledTier] = useState("public");
+  const [entitlement, setEntitlement] = useState(null);
   // REAL access tier
-  const viewerTier = useMemo(() => normalizeTier(entitledTier), [entitledTier]);
+  const tokenTier = useMemo(() => normalizeTierOrNull(router.query?.token_tier), [router.query]);
+  const viewerTier = useMemo(() => {
+    const a = normalizeTier(entitledTier);
+    const b = tokenTier ? normalizeTier(tokenTier) : "public";
+    return TIER_RANK[b] > TIER_RANK[a] ? b : a;
+  }, [entitledTier, tokenTier]);
   // vault gating
   const canSeeVault = useMemo(() => canViewTier(viewerTier, "packaging"), [viewerTier]);
   const showVault = useMemo(
@@ -1479,6 +1509,64 @@ export default function StudioUniverse() {
   const [bookProducts, setBookProducts] = useState([]);
   const [studioOffers, setStudioOffers] = useState([]);
   const [offersLoading, setOffersLoading] = useState(false);
+  async function downloadPagePdf(page_type) {
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess?.session?.access_token;
+      if (!token) {
+        alert("Please log in.");
+        return;
+      }
+
+      const res = await fetch("/api/studio/download-page", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          universe_id: universe.id,
+          page_type,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+
+      window.open(json.url, "_blank");
+    } catch (e) {
+      alert(e.message || "Download failed");
+    }
+  }
+  async function downloadProducerPacket(tier = "producer") {
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess?.session?.access_token;
+      if (!token) {
+        alert("Please log in.");
+        return;
+      }
+
+      const res = await fetch("/api/studio/download-packet", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          universe_id: universe.id,
+          tier,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+
+      window.open(json.url, "_blank");
+    } catch (e) {
+      alert(e.message || "Download failed");
+    }
+  }
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
@@ -1546,6 +1634,7 @@ export default function StudioUniverse() {
             (ent.status || "active") === "active" &&
             (!ent.expires_at || new Date(ent.expires_at) > now);
           setEntitledTier(isActive ? normalizeTier(ent.tier) : "public");
+          setEntitlement(isActive ? ent : null);
         }
       } catch (e) {
         console.warn("entitlement lookup failed", e);
@@ -1828,6 +1917,11 @@ export default function StudioUniverse() {
     return toc;
   }, [groupedPages]);
   async function startStudioCheckout(tier) {
+    const t = normalizeTier(tier);
+    if (canViewTier(viewerTier, t)) {
+      alert(`Already unlocked: ${tierLabel(t)}.`);
+      return;
+    }
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess?.session?.access_token;
@@ -1971,6 +2065,7 @@ export default function StudioUniverse() {
           onCheckout={startStudioCheckout}
           offers={studioOffers}
           offersLoading={offersLoading}
+          entitlement={entitlement}
         />
       </section>
       <SectionIntro
@@ -2282,6 +2377,16 @@ export default function StudioUniverse() {
                             {body ? renderPlainMarkdown(body) : <div className="text-sm opacity-70">No content yet.</div>}
                           </div>
                           <PageAttachmentsRail page={p} />
+                          {canViewTier(viewerTier, requiredTier) ? (
+                            <div className="mt-6 flex justify-end">
+                              <button
+                                onClick={() => downloadPagePdf(p.page_type)}
+                                className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-semibold"
+                              >
+                                Download PDF →
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       </AccessGateCard>
                     );

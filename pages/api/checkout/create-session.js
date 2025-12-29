@@ -31,6 +31,17 @@ function normalizeStudioTier(t) {
   return "";
 }
 
+// ✅ NEW: normalize/validate next path (prevents open redirects)
+function normalizeNextPath(next) {
+  const v = asStr(next).trim();
+  if (!v) return "";
+  // Only allow internal relative routes
+  if (!v.startsWith("/")) return "";
+  // Avoid protocol-relative //evil.com
+  if (v.startsWith("//")) return "";
+  return v;
+}
+
 async function getAuthedUserIdFromBearer(req) {
   const authHeader = req.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
@@ -64,9 +75,15 @@ export default async function handler(req, res) {
 
       // track who referred this customer
       affiliate_code = null,
+
+      // ✅ NEW: where to return after checkout (e.g. "/studios/<slug>")
+      next,
     } = req.body || {};
 
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+
+    // ✅ NEW: safe internal next path (never external)
+    const nextPath = normalizeNextPath(next);
 
     // -------------------------
     // 1) SUBSCRIPTION CHECKOUT
@@ -141,8 +158,7 @@ export default async function handler(req, res) {
     }
 
     // Decide if we must collect shipping (for merch/physical items)
-    const needsShipping =
-      !!meta.printful_sync_variant_id || meta.fulfill_with_printful === true;
+    const needsShipping = !!meta.printful_sync_variant_id || meta.fulfill_with_printful === true;
 
     // ✅ FIX: Studio Access detection must include offer_type OR kind
     // This prevents subtle mismatches where products use metadata.offer_type = "studio_access"
@@ -185,10 +201,19 @@ export default async function handler(req, res) {
       }
     }
 
-    // ✅ safer studio cancel URL (won't create weird empty /studios/)
-    const studioCancelUrl = studioUniverseSlug
-      ? `${baseUrl}/studios/${studioUniverseSlug}`
-      : `${baseUrl}/studios`;
+    // ✅ NEW: build default return path for studio flows if caller didn't pass next
+    // Priority: explicit next > inferred studio slug > studios library
+    const inferredStudioNext = studioUniverseSlug ? `/studios/${studioUniverseSlug}` : "/studios";
+    const finalNextPath = nextPath || (isStudioAccess ? inferredStudioNext : "");
+
+    // ✅ NEW: defaults for studio success/cancel that include next
+    const studioSuccessUrl =
+      `${baseUrl}/checkout/studio-success?session_id={CHECKOUT_SESSION_ID}` +
+      (finalNextPath ? `&next=${encodeURIComponent(finalNextPath)}` : "");
+
+    const studioCancelUrl =
+      `${baseUrl}/checkout/studio-cancel` +
+      (finalNextPath ? `?next=${encodeURIComponent(finalNextPath)}` : "");
 
     // build Checkout Session
     const session = await stripe.checkout.sessions.create({
@@ -205,13 +230,14 @@ export default async function handler(req, res) {
         : undefined,
       phone_number_collection: needsShipping ? { enabled: true } : undefined,
 
-      // ✅ Studio: use studio-success by default (you can override by passing success_url)
+      // ✅ Studio: use studio-success by default (includes &next=...)
       success_url:
         success_url ||
         (isStudioAccess
-          ? `${baseUrl}/checkout/studio-success?session_id={CHECKOUT_SESSION_ID}`
+          ? studioSuccessUrl
           : `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`),
 
+      // ✅ Studio: use studio-cancel by default (includes ?next=...)
       cancel_url:
         cancel_url ||
         (isStudioAccess ? studioCancelUrl : `${baseUrl}/checkout/cancelled`),
@@ -236,6 +262,9 @@ export default async function handler(req, res) {
 
         // ✅ include universe_slug for better webhook emails / links
         universe_slug: isStudioAccess ? String(studioUniverseSlug || "") : "",
+
+        // ✅ NEW: return routing (safe internal path only)
+        next: finalNextPath ? String(finalNextPath) : "",
       },
     });
 
@@ -263,6 +292,9 @@ export default async function handler(req, res) {
         kind: isStudioAccess ? "studio_access" : offerType || null,
         universe_id: isStudioAccess ? studioUniverseId : null,
         tier: isStudioAccess ? studioTier : null,
+
+        // ✅ NEW: trace next routing
+        next: finalNextPath || null,
       },
     });
 
