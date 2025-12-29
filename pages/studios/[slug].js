@@ -904,7 +904,7 @@ function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, o
     </div>
   );
 }
-function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offers = [], offersLoading = false, entitlement }) {
+function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offers = [], offersLoading = false, entitlement, onDownloadPacket }) {
   const fallbackTiers = [
     {
       key: "priority",
@@ -1048,7 +1048,7 @@ function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offe
                       Unlocked ✓
                     </div>
                     <button
-                      onClick={() => downloadProducerPacket(t.key)}
+                      onClick={() => (typeof onDownloadPacket === "function" ? onDownloadPacket(t.key) : null)}
                       className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-semibold"
                     >
                       Download {tierLabel(t.key)} Packet →
@@ -1509,60 +1509,44 @@ export default function StudioUniverse() {
   const [bookProducts, setBookProducts] = useState([]);
   const [studioOffers, setStudioOffers] = useState([]);
   const [offersLoading, setOffersLoading] = useState(false);
-  async function downloadPagePdf(page_type) {
+  async function getAccessTokenOrThrow() {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) throw new Error("Not logged in");
+    return token;
+  }
+  async function downloadPagePdf(page_type, mode = "full") {
     try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess?.session?.access_token;
-      if (!token) {
-        alert("Please log in.");
-        return;
-      }
-
-      const res = await fetch("/api/studio/download-page", {
+      const token = await getAccessTokenOrThrow();
+      const r = await fetch("/api/studio/download-page", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          universe_id: universe.id,
-          page_type,
-        }),
+        body: JSON.stringify({ universe_id: universe.id, page_type, mode }),
       });
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error);
-
-      window.open(json.url, "_blank");
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "Download failed");
+      window.open(j.url, "_blank");
     } catch (e) {
       alert(e.message || "Download failed");
     }
   }
-  async function downloadProducerPacket(tier = "producer") {
+  async function downloadPacket(tier = "producer", mode = "full", include_vault = false) {
     try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess?.session?.access_token;
-      if (!token) {
-        alert("Please log in.");
-        return;
-      }
-
-      const res = await fetch("/api/studio/download-packet", {
+      const token = await getAccessTokenOrThrow();
+      const r = await fetch("/api/studio/download-packet", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          universe_id: universe.id,
-          tier,
-        }),
+        body: JSON.stringify({ universe_id: universe.id, tier, mode, include_vault }),
       });
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error);
-
-      window.open(json.url, "_blank");
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "Packet download failed");
+      window.open(j.url, "_blank");
     } catch (e) {
       alert(e.message || "Download failed");
     }
@@ -2066,6 +2050,7 @@ export default function StudioUniverse() {
           offers={studioOffers}
           offersLoading={offersLoading}
           entitlement={entitlement}
+          onDownloadPacket={(tierKey) => downloadPacket(tierKey)}
         />
       </section>
       <SectionIntro
@@ -2572,35 +2557,6 @@ export default function StudioUniverse() {
               </a>
             </Card>
           ) : null}
-        </div>
-      </section>
-      <section className="container mx-auto px-4 pb-14">
-        <div className="rounded-3xl bg-white/80 dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 shadow-sm p-6 md:p-8">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Creator</div>
-              <div className="text-2xl font-bold mt-1">Credits</div>
-            </div>
-            <div className="flex gap-2 flex-wrap justify-end">
-              {chip("© Manyagi Studios")}
-              {chip("All Rights Reserved")}
-              {chip("Original IP")}
-            </div>
-          </div>
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 p-4">
-              <div className="text-xs opacity-60 uppercase tracking-wider">Created by</div>
-              <div className="font-semibold mt-1">Dennis Manyagi</div>
-            </div>
-            <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 p-4">
-              <div className="text-xs opacity-60 uppercase tracking-wider">Music / Sound</div>
-              <div className="font-semibold mt-1">Manyagi Media</div>
-            </div>
-            <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 p-4">
-              <div className="text-xs opacity-60 uppercase tracking-wider">Studio Packaging</div>
-              <div className="font-semibold mt-1">Manyagi Studios</div>
-            </div>
-          </div>
         </div>
       </section>
       <section className="container mx-auto px-4 pb-20" id="contact">
