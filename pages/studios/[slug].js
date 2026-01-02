@@ -281,10 +281,6 @@ function prettyType(t) {
     scene: "Scenes",
     playlist: "Playlists",
     musicvideo: "Music Videos",
-    reel: "Reels",
-    podcast: "Podcasts",
-    interview: "Interviews",
-    event: "Events",
     other: "Media",
   };
   return map[v] || "Media";
@@ -639,14 +635,6 @@ function AttachmentCard({ att }) {
               {ft && ft !== "image" ? ` • ${ft.toUpperCase()}` : ""}
             </div>
             <div className="text-lg font-semibold mt-1 truncate">{title}</div>
-            {(att?.duration || att?.bpm || att?.license_tier) ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {att?.duration ? chip(String(att.duration)) : null}
-                {att?.bpm ? chip(`${att.bpm} BPM`) : null}
-                {att?.license_tier ? chip(String(att.license_tier)) : null}
-              </div>
-            ) : null}
-            {att?.notes ? <div className="text-sm opacity-80 mt-3 whitespace-pre-wrap">{att.notes}</div> : null}
           </div>
         </div>
         <div className="mt-4">
@@ -961,13 +949,11 @@ function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offe
         <div>
           <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Packages</div>
           <div className="text-2xl font-bold mt-2">Choose access level</div>
-          <div className="text-sm opacity-80 mt-2">
-            Organize your studio pages into sellable tiers.
+          <div className="text-sm opacity-80 mt-2">Organize your studio pages into sellable tiers.
             {offersLoading ? " (Loading offers…)" : ""}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={tierBadge(viewerTier)}>Viewing: {tierLabel(viewerTier)}</span>
-            {showVault ? chip("Vault: ON") : chip("Vault: OFF")}
           </div>
         </div>
         {/* tier buttons stay the same */}
@@ -1712,7 +1698,7 @@ export default function StudioUniverse() {
     );
   }, [assets]);
   const trailerUrl = useMemo(() => {
-    return getAssetUrl(trailerAsset) || universe?.hero_video_url || null;
+    return universe?.trailer_video_url || getAssetUrl(trailerAsset) || universe?.hero_video_url || null;
   }, [trailerAsset, universe]);
   const worldMapAssets = useMemo(() => {
     return assets

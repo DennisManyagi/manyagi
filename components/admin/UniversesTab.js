@@ -1,7 +1,5 @@
-// components/admin/UniversesTab.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-
 /** =========================
  * Utils
  * ========================= */
@@ -14,17 +12,14 @@ function slugify(str = "") {
     .replace(/-+/g, "-")
     .replace(/(^-|-$)/g, "");
 }
-
 function toMoney(cents = 0) {
   const n = Number(cents || 0);
   return (n / 100).toFixed(2);
 }
-
 function clampInt(v, fallback = 0) {
   const n = parseInt(String(v ?? ""), 10);
   return Number.isFinite(n) ? n : fallback;
 }
-
 function safeJsonParse(str, fallback = {}) {
   try {
     if (!str || !String(str).trim()) return fallback;
@@ -34,21 +29,17 @@ function safeJsonParse(str, fallback = {}) {
     return fallback;
   }
 }
-
 function extFromFile(file) {
   const name = String(file?.name || "");
   const idx = name.lastIndexOf(".");
   return idx >= 0 ? name.slice(idx + 1).toLowerCase() : "bin";
 }
-
 function isLikelyMp4Url(url = "") {
   return String(url || "").toLowerCase().includes(".mp4");
 }
-
 function isAudioLikeUrl(url = "") {
   return /\.(mp3|wav|m4a|ogg)$/i.test(String(url || "").split("?")[0]);
 }
-
 function safeMeta(meta) {
   if (!meta) return {};
   if (typeof meta === "object") return meta;
@@ -62,29 +53,24 @@ function safeMeta(meta) {
   }
   return {};
 }
-
 /** =========================
  * ✅ Storage helpers (CLIENT-SAFE)
  * ========================= */
 const DEFAULT_BUCKET = process.env.NEXT_PUBLIC_STORAGE_BUCKET || "assets";
-
 function normalizeExt(file) {
   const ext = extFromFile(file);
   return ext === "jpeg" ? "jpg" : ext;
 }
-
 function isMp4File(file) {
   const t = String(file?.type || "").toLowerCase();
   const n = String(file?.name || "").toLowerCase();
   return t === "video/mp4" || n.endsWith(".mp4");
 }
-
 function isImageFile(file) {
   const t = String(file?.type || "").toLowerCase();
   const n = String(file?.name || "").toLowerCase();
   return t.startsWith("image/") || /\.(png|jpg|jpeg|webp|gif)$/i.test(n);
 }
-
 function assertAllowed(file, allowed) {
   if (!file) throw new Error("No file selected.");
   if (allowed.includes("image") && isImageFile(file)) return;
@@ -92,7 +78,6 @@ function assertAllowed(file, allowed) {
   const allowedText = allowed.join(", ");
   throw new Error(`Invalid file type. Allowed: ${allowedText}`);
 }
-
 function makeSafeFileName(file) {
   const ext = normalizeExt(file);
   const base = String(file?.name || "file")
@@ -104,7 +89,6 @@ function makeSafeFileName(file) {
   const rand = Math.random().toString(16).slice(2);
   return `${Date.now()}-${base || "file"}-${rand}.${ext}`;
 }
-
 async function uploadToStorage({
   bucket = DEFAULT_BUCKET,
   file,
@@ -114,26 +98,19 @@ async function uploadToStorage({
 }) {
   if (!bucket) throw new Error("No storage bucket selected.");
   assertAllowed(file, allowed);
-
   const safeName = makeSafeFileName(file);
   const path = `${folder}/${safeName}`;
-
   const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, {
     upsert,
     contentType: file.type || "application/octet-stream",
     cacheControl: "3600",
   });
-
   if (upErr) throw upErr;
-
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   const publicUrl = data?.publicUrl;
-
   if (!publicUrl) throw new Error("Failed to get public URL.");
-
   return { publicUrl, path, bucket };
 }
-
 export default function UniversesTab() {
   /** =========================
    * State
@@ -141,18 +118,14 @@ export default function UniversesTab() {
   const [universes, setUniverses] = useState([]);
   const [selectedUniverse, setSelectedUniverse] = useState(null);
   const [assets, setAssets] = useState([]);
-
   const [loading, setLoading] = useState(true);
   const [savingUniverse, setSavingUniverse] = useState(false);
   const [uploading, setUploading] = useState(false);
-
   const [notice, setNotice] = useState(null); // {type,msg}
-
   // ✅ Storage bucket handling
   const [buckets, setBuckets] = useState([]);
   const [storageBucket, setStorageBucket] = useState(""); // chosen bucket
   const [bucketReady, setBucketReady] = useState(false);
-
   // Universe form
   const [uTitle, setUTitle] = useState("");
   const [uSlug, setUSlug] = useState("");
@@ -161,27 +134,24 @@ export default function UniversesTab() {
   const [uSynopsis, setUSynopsis] = useState("");
   const [uCover, setUCover] = useState("");
   const [uHeroVideo, setUHeroVideo] = useState("");
+  const [uTrailerVideo, setUTrailerVideo] = useState("");
   const [uWorldMap, setUWorldMap] = useState("");
   const [uStatus, setUStatus] = useState("draft"); // draft|published
-
   // Product search (existing)
   const [division, setDivision] = useState("publishing");
   const [query, setQuery] = useState("");
   const [productResults, setProductResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const lastSearchKey = useRef("");
-
   // ✅ NEW: Media search (posts division=media)
   const [mediaQuery, setMediaQuery] = useState("");
   const [mediaTypeFilter, setMediaTypeFilter] = useState("all"); // all|soundtrack|score|trailer|audiobook|chapter_read|scene|playlist|musicvideo
   const [mediaResults, setMediaResults] = useState([]);
   const [mediaSearching, setMediaSearching] = useState(false);
   const lastMediaSearchKey = useRef("");
-
   // Universe asset CRUD
   const [assetEdits, setAssetEdits] = useState({});
   const [savingAssetIds, setSavingAssetIds] = useState({});
-
   // Quick-add (existing)
   const [qaDivision, setQaDivision] = useState("studios");
   const [qaType, setQaType] = useState("trailer");
@@ -193,12 +163,10 @@ export default function UniversesTab() {
   const [qaPrice, setQaPrice] = useState("");
   const [qaStatus, setQaStatus] = useState("published");
   const [qaMetaStr, setQaMetaStr] = useState("");
-
   // Studio Pages (keep intact)
   const [studioPages, setStudioPages] = useState([]);
   const [loadingPages, setLoadingPages] = useState(false);
   const [savingPageId, setSavingPageId] = useState(null);
-
   const [pId, setPId] = useState(null);
   const [pType, setPType] = useState("one_sheet");
   const [pTitle, setPTitle] = useState("");
@@ -208,19 +176,15 @@ export default function UniversesTab() {
   const [pHeroImg, setPHeroImg] = useState("");
   const [pHeroVid, setPHeroVid] = useState("");
   const [pContent, setPContent] = useState("");
-
   const PAGE_TYPES = useMemo(
     () => ["one_sheet", "series_bible", "press_kit", "negotiation", "roadmap", "prompts", "deck_copy"],
     []
   );
-
   const MEDIA_TYPES = useMemo(
     () => ["all", "soundtrack", "score", "trailer", "audiobook", "chapter_read", "scene", "playlist", "musicvideo"],
     []
   );
-
   const canEditUniverse = Boolean(selectedUniverse?.id);
-
   /** =========================
    * ✅ INIT: client-safe bucket selection
    * ========================= */
@@ -228,7 +192,6 @@ export default function UniversesTab() {
     const preferred = DEFAULT_BUCKET;
     setStorageBucket(preferred);
     setBucketReady(true);
-
     (async () => {
       try {
         const { data } = await supabase.storage.listBuckets();
@@ -238,7 +201,6 @@ export default function UniversesTab() {
       }
     })();
   }, []);
-
   /** =========================
    * Reset helpers
    * ========================= */
@@ -250,10 +212,10 @@ export default function UniversesTab() {
     setUSynopsis("");
     setUCover("");
     setUHeroVideo("");
+    setUTrailerVideo("");
     setUWorldMap("");
     setUStatus("draft");
   }, []);
-
   const resetQuickAdd = useCallback(() => {
     setQaDivision("studios");
     setQaType("trailer");
@@ -266,7 +228,6 @@ export default function UniversesTab() {
     setQaStatus("published");
     setQaMetaStr("");
   }, []);
-
   const resetPageEditor = useCallback(() => {
     setPId(null);
     setPType("one_sheet");
@@ -278,14 +239,12 @@ export default function UniversesTab() {
     setPHeroVid("");
     setPContent("");
   }, []);
-
   /** =========================
    * Loaders
    * ========================= */
   const loadUniverses = useCallback(async () => {
     setLoading(true);
     setNotice(null);
-
     const { data, error } = await supabase.from("universes").select("*").order("updated_at", { ascending: false });
     if (error) {
       console.error(error);
@@ -296,17 +255,14 @@ export default function UniversesTab() {
     }
     setLoading(false);
   }, []);
-
   const loadUniverseAssets = useCallback(async (universeId) => {
     if (!universeId) return;
-
     const { data, error } = await supabase
       .from("universe_assets")
       .select("*")
       .eq("universe_id", universeId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
-
     if (error) {
       console.error(error);
       setAssets([]);
@@ -314,22 +270,18 @@ export default function UniversesTab() {
     } else {
       setAssets(data || []);
     }
-
     setAssetEdits({});
     setSavingAssetIds({});
   }, []);
-
   const loadStudioPages = useCallback(async (universeId) => {
     if (!universeId) return;
     setLoadingPages(true);
-
     const { data, error } = await supabase
       .from("studio_pages")
       .select("*")
       .eq("universe_id", universeId)
       .order("sort_order", { ascending: true })
       .order("updated_at", { ascending: false });
-
     if (error) {
       console.error(error);
       setStudioPages([]);
@@ -339,18 +291,15 @@ export default function UniversesTab() {
     }
     setLoadingPages(false);
   }, []);
-
   useEffect(() => {
     loadUniverses();
   }, [loadUniverses]);
-
   useEffect(() => {
     if (!selectedUniverse?.id) return;
     loadUniverseAssets(selectedUniverse.id);
     loadStudioPages(selectedUniverse.id);
     resetPageEditor();
   }, [selectedUniverse?.id, loadUniverseAssets, loadStudioPages, resetPageEditor]);
-
   /** =========================
    * Select universe
    * ========================= */
@@ -363,11 +312,11 @@ export default function UniversesTab() {
     setUSynopsis(u.synopsis || "");
     setUCover(u.cover_image_url || "");
     setUHeroVideo(u.hero_video_url || "");
+    setUTrailerVideo(u.trailer_video_url || "");
     setUWorldMap(u.world_map_url || "");
     setUStatus(u.status || "draft");
     setNotice(null);
   }, []);
-
   /** =========================
    * Save universe
    * ========================= */
@@ -375,7 +324,6 @@ export default function UniversesTab() {
     async (nextStatus) => {
       setSavingUniverse(true);
       setNotice(null);
-
       try {
         const payload = {
           title: uTitle.trim(),
@@ -383,17 +331,17 @@ export default function UniversesTab() {
           tagline: uTagline,
           logline: uLogline,
           synopsis: uSynopsis,
-          cover_image_url: uCover,
-          hero_video_url: uHeroVideo,
-          world_map_url: uWorldMap,
+          cover_image_url: (uCover && uCover.trim()) || selectedUniverse?.cover_image_url || "",
+          hero_video_url: (uHeroVideo && uHeroVideo.trim()) || selectedUniverse?.hero_video_url || "",
+          trailer_video_url: (uTrailerVideo && uTrailerVideo.trim()) || selectedUniverse?.trailer_video_url || "",
+          world_map_url: (uWorldMap && uWorldMap.trim()) || selectedUniverse?.world_map_url || "",
           status: (nextStatus || uStatus || "draft").trim(),
           division: "publishing",
           updated_at: new Date().toISOString(),
         };
-
+        console.log("SAVE payload trailer_video_url =", payload.trailer_video_url);
         if (!payload.title) throw new Error("Title is required.");
         if (!payload.slug) throw new Error("Slug is required.");
-
         if (selectedUniverse?.id) {
           const { error } = await supabase.from("universes").update(payload).eq("id", selectedUniverse.id);
           if (error) throw error;
@@ -407,7 +355,6 @@ export default function UniversesTab() {
             msg: payload.status === "published" ? "Universe created + published." : "Universe created.",
           });
         }
-
         await loadUniverses();
       } catch (e) {
         console.error(e);
@@ -416,36 +363,28 @@ export default function UniversesTab() {
         setSavingUniverse(false);
       }
     },
-    [uTitle, uSlug, uTagline, uLogline, uSynopsis, uCover, uHeroVideo, uWorldMap, uStatus, selectedUniverse?.id, loadUniverses]
+    [uTitle, uSlug, uTagline, uLogline, uSynopsis, uCover, uHeroVideo, uTrailerVideo, uWorldMap, uStatus, selectedUniverse, loadUniverses]
   );
-
   const publishUniverse = useCallback(async () => {
     setUStatus("published");
     await saveUniverse("published");
   }, [saveUniverse]);
-
   const unpublishUniverse = useCallback(async () => {
     setUStatus("draft");
     await saveUniverse("draft");
   }, [saveUniverse]);
-
   const deleteUniverse = useCallback(async () => {
     if (!selectedUniverse?.id) return;
     if (!confirm("Delete this universe AND all its universe items? This cannot be undone.")) return;
-
     try {
       setSavingUniverse(true);
       setNotice(null);
-
       const { error: aErr } = await supabase.from("universe_assets").delete().eq("universe_id", selectedUniverse.id);
       if (aErr) throw aErr;
-
       const { error: pErr } = await supabase.from("studio_pages").delete().eq("universe_id", selectedUniverse.id);
       if (pErr) throw pErr;
-
       const { error: uErr } = await supabase.from("universes").delete().eq("id", selectedUniverse.id);
       if (uErr) throw uErr;
-
       setSelectedUniverse(null);
       resetUniverseForm();
       setAssets([]);
@@ -454,9 +393,6 @@ export default function UniversesTab() {
       setProductResults([]);
       setAssetEdits({});
       resetQuickAdd();
-      setMediaResults([]);
-      setMediaQuery("");
-      setMediaTypeFilter("all");
       setNotice({ type: "ok", msg: "Universe deleted." });
       await loadUniverses();
     } catch (e) {
@@ -466,7 +402,6 @@ export default function UniversesTab() {
       setSavingUniverse(false);
     }
   }, [selectedUniverse?.id, resetUniverseForm, resetPageEditor, loadUniverses, resetQuickAdd]);
-
   /** =========================
    * ✅ Persist field immediately (cover/map/hero uploads)
    * ========================= */
@@ -481,7 +416,6 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id]
   );
-
   /** =========================
    * ✅ Universe Cover Upload
    * ========================= */
@@ -495,16 +429,13 @@ export default function UniversesTab() {
       try {
         setUploading(true);
         setNotice(null);
-
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
-
         const { publicUrl } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder: `images/universes/${slug}/cover`,
           allowed: ["image"],
         });
-
         setUCover(publicUrl);
         if (selectedUniverse?.id) await persistUniverseField("cover_image_url", publicUrl);
         setNotice({ type: "ok", msg: "Cover uploaded and saved." });
@@ -517,7 +448,6 @@ export default function UniversesTab() {
     },
     [storageBucket, uSlug, uTitle, selectedUniverse?.id, selectedUniverse?.slug, persistUniverseField]
   );
-
   /** =========================
    * ✅ Hero Video Upload
    * ========================= */
@@ -528,23 +458,18 @@ export default function UniversesTab() {
         setNotice({ type: "error", msg: "No storage bucket selected." });
         return;
       }
-
       try {
         setUploading(true);
         setNotice(null);
-
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
-
         const { publicUrl } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder: `videos/universes/${slug}/hero`,
           allowed: ["mp4"],
         });
-
         setUHeroVideo(publicUrl);
         if (selectedUniverse?.id) await persistUniverseField("hero_video_url", publicUrl);
-
         setNotice({ type: "ok", msg: "Hero video uploaded and saved." });
       } catch (e) {
         console.error(e);
@@ -555,7 +480,39 @@ export default function UniversesTab() {
     },
     [storageBucket, uSlug, uTitle, selectedUniverse?.id, selectedUniverse?.slug, persistUniverseField]
   );
-
+  /** =========================
+   * ✅ Trailer Video Upload
+   * ========================= */
+  const uploadTrailerVideoFile = useCallback(
+    async (file) => {
+      if (!file) return;
+      if (!storageBucket) {
+        setNotice({ type: "error", msg: "No storage bucket selected." });
+        return;
+      }
+      try {
+        setUploading(true);
+        setNotice(null);
+        const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
+        const { publicUrl } = await uploadToStorage({
+          bucket: storageBucket,
+          file,
+          folder: `videos/universes/${slug}/trailer`,
+          allowed: ["mp4"],
+        });
+        console.log("TRAILER UPLOADED publicUrl =", publicUrl);
+        setUTrailerVideo(publicUrl);
+        if (selectedUniverse?.id) await persistUniverseField("trailer_video_url", publicUrl);
+        setNotice({ type: "ok", msg: "Trailer video uploaded and saved." });
+      } catch (e) {
+        console.error(e);
+        setNotice({ type: "error", msg: e?.message || "Trailer video upload failed" });
+      } finally {
+        setUploading(false);
+      }
+    },
+    [storageBucket, uSlug, uTitle, selectedUniverse?.id, selectedUniverse?.slug, persistUniverseField]
+  );
   /** =========================
    * ✅ Featured World Map Upload
    * ========================= */
@@ -569,19 +526,15 @@ export default function UniversesTab() {
       try {
         setUploading(true);
         setNotice(null);
-
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
-
         const { publicUrl } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder: `images/universes/${slug}/world-map/featured`,
           allowed: ["image"],
         });
-
         setUWorldMap(publicUrl);
         if (selectedUniverse?.id) await persistUniverseField("world_map_url", publicUrl);
-
         setNotice({ type: "ok", msg: "Featured world map uploaded and saved." });
       } catch (e) {
         console.error(e);
@@ -592,7 +545,6 @@ export default function UniversesTab() {
     },
     [storageBucket, uSlug, uTitle, selectedUniverse?.id, selectedUniverse?.slug, persistUniverseField]
   );
-
   /** =========================
    * Studio pages (kept intact)
    * ========================= */
@@ -607,7 +559,6 @@ export default function UniversesTab() {
     setPHeroVid(pg.hero_video_url || "");
     setPContent(pg.content_md || "");
   }, []);
-
   const savePage = useCallback(async () => {
     if (!selectedUniverse?.id) {
       setNotice({ type: "error", msg: "Select or create a universe first." });
@@ -617,10 +568,8 @@ export default function UniversesTab() {
       setNotice({ type: "error", msg: "Page title is required." });
       return;
     }
-
     setSavingPageId(pId || "new");
     setNotice(null);
-
     const payload = {
       universe_id: selectedUniverse.id,
       page_type: pType,
@@ -633,7 +582,6 @@ export default function UniversesTab() {
       content_md: pContent || "",
       updated_at: new Date().toISOString(),
     };
-
     try {
       if (pId) {
         const { error } = await supabase.from("studio_pages").update(payload).eq("id", pId);
@@ -645,7 +593,6 @@ export default function UniversesTab() {
         setPId(data.id);
         setNotice({ type: "ok", msg: "Studio page created." });
       }
-
       await loadStudioPages(selectedUniverse.id);
     } catch (e) {
       console.error(e);
@@ -654,14 +601,11 @@ export default function UniversesTab() {
       setSavingPageId(null);
     }
   }, [selectedUniverse?.id, pId, pType, pTitle, pStatus, pSort, pExcerpt, pHeroImg, pHeroVid, pContent, loadStudioPages]);
-
   const deletePage = useCallback(async () => {
     if (!selectedUniverse?.id || !pId) return;
     if (!confirm("Delete this studio page?")) return;
-
     setSavingPageId(pId);
     setNotice(null);
-
     try {
       const { error } = await supabase.from("studio_pages").delete().eq("id", pId);
       if (error) throw error;
@@ -675,7 +619,6 @@ export default function UniversesTab() {
       setSavingPageId(null);
     }
   }, [selectedUniverse?.id, pId, loadStudioPages, resetPageEditor]);
-
   /** =========================
    * Products attach (existing)
    * ========================= */
@@ -686,20 +629,16 @@ export default function UniversesTab() {
       const qtxt = query.trim();
       const searchKey = `${division}::${qtxt}`;
       lastSearchKey.current = searchKey;
-
       let q = supabase
         .from("products")
         .select("id,name,slug,division,price,image_url,tags,description,thumbnail_url,updated_at")
         .eq("division", division)
         .order("updated_at", { ascending: false })
         .limit(12);
-
       if (qtxt) q = q.or(`name.ilike.%${qtxt}%,slug.ilike.%${qtxt}%`);
-
       const { data, error } = await q;
       if (lastSearchKey.current !== searchKey) return;
       if (error) throw error;
-
       setProductResults(data || []);
     } catch (e) {
       console.error(e);
@@ -709,13 +648,11 @@ export default function UniversesTab() {
       setSearching(false);
     }
   }, [division, query]);
-
   useEffect(() => {
     if (!selectedUniverse?.id) return;
     if (query.trim() !== "") return;
     searchProducts();
   }, [division, selectedUniverse?.id, query, searchProducts]);
-
   const addProductToUniverse = useCallback(
     async (product) => {
       if (!selectedUniverse?.id) {
@@ -727,7 +664,6 @@ export default function UniversesTab() {
         setNotice({ type: "error", msg: "That product is already in this universe." });
         return;
       }
-
       const internalUrl =
         product.division === "publishing"
           ? `/publishing/${product.slug}`
@@ -738,12 +674,9 @@ export default function UniversesTab() {
           : product.division === "realty"
           ? `/realty`
           : `/`;
-
       const assetType = product.division === "publishing" ? "book" : product.division === "designs" ? "merch" : "product";
-
       try {
         const maxSort = assets.length ? Math.max(...assets.map((x) => clampInt(x.sort_order, 0))) : 0;
-
         const insertRow = {
           universe_id: selectedUniverse.id,
           division: product.division,
@@ -764,10 +697,8 @@ export default function UniversesTab() {
             product_division: product.division,
           },
         };
-
         const { error } = await supabase.from("universe_assets").insert([insertRow]);
         if (error) throw error;
-
         setNotice({ type: "ok", msg: "Added to universe." });
         await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
@@ -777,7 +708,6 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id, assets, loadUniverseAssets]
   );
-
   /** =========================
    * ✅ NEW: Media attach (from posts table where division='media')
    * Goal:
@@ -795,12 +725,10 @@ export default function UniversesTab() {
     }
     setMediaSearching(true);
     setNotice(null);
-
     try {
       const qtxt = mediaQuery.trim();
       const searchKey = `${mediaTypeFilter}::${qtxt}`;
       lastMediaSearchKey.current = searchKey;
-
       // ✅ FIX: removed "thumbnail_url" from select because posts.thumbnail_url does not exist
       let q = supabase
         .from("posts")
@@ -808,30 +736,23 @@ export default function UniversesTab() {
         .eq("division", "media")
         .order("updated_at", { ascending: false })
         .limit(20);
-
       if (qtxt) {
         q = q.or(`title.ilike.%${qtxt}%,slug.ilike.%${qtxt}%,excerpt.ilike.%${qtxt}%`);
       }
-
       const { data, error } = await q;
       if (lastMediaSearchKey.current !== searchKey) return;
       if (error) throw error;
-
       let list = (data || []).map((p) => {
         const m = safeMeta(p.metadata);
         const media_type = String(m.media_type || "").trim() || "soundtrack";
-
         const audio_url = String(m.audio_url || "").trim();
         const media_url = String(m.media_url || "").trim();
-
         const bestMediaUrl = audio_url || media_url || "";
-
         // ✅ FIX: never reference p.thumbnail_url; derive thumbnail from metadata + featured_image only
         const thumb =
           String(m.thumbnail_url || m.thumb_url || m.cover_url || "").trim() ||
           String(p.featured_image || "").trim() ||
           "";
-
         return {
           ...p,
           _meta: m,
@@ -842,11 +763,9 @@ export default function UniversesTab() {
           _thumb: thumb,
         };
       });
-
       if (mediaTypeFilter !== "all") {
         list = list.filter((p) => String(p._media_type || "").toLowerCase() === String(mediaTypeFilter).toLowerCase());
       }
-
       setMediaResults(list);
     } catch (e) {
       console.error(e);
@@ -856,21 +775,18 @@ export default function UniversesTab() {
       setMediaSearching(false);
     }
   }, [selectedUniverse?.id, mediaQuery, mediaTypeFilter]);
-
   useEffect(() => {
     if (!selectedUniverse?.id) return;
     // auto-load “recent media” once universe is selected
     if (mediaQuery.trim() !== "") return;
     searchMediaPosts();
   }, [selectedUniverse?.id, mediaTypeFilter, mediaQuery, searchMediaPosts]);
-
   const addMediaPostToUniverse = useCallback(
     async (post) => {
       if (!selectedUniverse?.id) {
         setNotice({ type: "error", msg: "Select or create a universe first." });
         return;
       }
-
       // de-dupe by metadata.post_id OR by external_url === /media/slug
       const already = assets.some((a) => {
         if (a.source_type === "post") {
@@ -881,31 +797,24 @@ export default function UniversesTab() {
         if (a.external_url && post?.slug && String(a.external_url) === `/media/${post.slug}`) return true;
         return false;
       });
-
       if (already) {
         setNotice({ type: "error", msg: "That media item is already attached to this universe." });
         return;
       }
-
       try {
         const maxSort = assets.length ? Math.max(...assets.map((x) => clampInt(x.sort_order, 0))) : 0;
         const m = safeMeta(post._meta || post.metadata);
-
         // prefer a playable url for Studio preview (audio first)
         const audio_url = String(m.audio_url || post._audio_url || "").trim();
         const media_url = String(m.media_url || post._media_url || "").trim();
         const playable = audio_url || (isAudioLikeUrl(media_url) ? media_url : "");
-
         // Always set internal detail page too
         const detailUrl = post?.slug ? `/media/${post.slug}` : "";
-
         // Use playable url if present; otherwise link to the detail page so Studio can still open it
         const external_url = playable || media_url || detailUrl;
-
         // asset_type should map to your studio renderer categories
         // (you can adjust mappings here without touching Studio code)
         const asset_type = String(m.media_type || post._media_type || "soundtrack").trim() || "soundtrack";
-
         const insertRow = {
           universe_id: selectedUniverse.id,
           division: "media",
@@ -935,10 +844,8 @@ export default function UniversesTab() {
           },
           updated_at: new Date().toISOString(),
         };
-
         const { error } = await supabase.from("universe_assets").insert([insertRow]);
         if (error) throw error;
-
         setNotice({ type: "ok", msg: "Media added to universe." });
         await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
@@ -948,14 +855,12 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id, assets, loadUniverseAssets]
   );
-
   /** =========================
    * Asset edit helpers (existing)
    * ========================= */
   const setAssetField = useCallback((assetId, patch) => {
     setAssetEdits((prev) => ({ ...prev, [assetId]: { ...(prev[assetId] || {}), ...patch } }));
   }, []);
-
   const getAssetVal = useCallback(
     (asset, key, fallback = "") => {
       const row = assetEdits[asset.id] || {};
@@ -964,7 +869,6 @@ export default function UniversesTab() {
     },
     [assetEdits]
   );
-
   const getAssetMetaStr = useCallback(
     (asset) => {
       const row = assetEdits[asset.id] || {};
@@ -973,7 +877,6 @@ export default function UniversesTab() {
     },
     [assetEdits]
   );
-
   const saveAsset = useCallback(
     async (asset) => {
       const row = assetEdits[asset.id] || {};
@@ -981,11 +884,9 @@ export default function UniversesTab() {
         setNotice({ type: "ok", msg: "No changes to save." });
         return;
       }
-
       try {
         setSavingAssetIds((prev) => ({ ...prev, [asset.id]: true }));
         setNotice(null);
-
         const payload = {};
         if (row.title !== undefined) payload.title = row.title;
         if (row.description !== undefined) payload.description = row.description;
@@ -999,13 +900,10 @@ export default function UniversesTab() {
         if (row.price_cents !== undefined) payload.price_cents = clampInt(row.price_cents, 0);
         if (row.metadataStr !== undefined) payload.metadata = safeJsonParse(row.metadataStr, asset.metadata || {});
         payload.updated_at = new Date().toISOString();
-
         const { error } = await supabase.from("universe_assets").update(payload).eq("id", asset.id);
         if (error) throw error;
-
         setAssetEdits((prev) => ({ ...prev, [asset.id]: {} }));
         setNotice({ type: "ok", msg: "Universe item saved." });
-
         if (selectedUniverse?.id) await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
         console.error(e);
@@ -1016,12 +914,10 @@ export default function UniversesTab() {
     },
     [assetEdits, selectedUniverse?.id, loadUniverseAssets]
   );
-
   const removeAsset = useCallback(
     async (assetId) => {
       if (!selectedUniverse?.id) return;
       if (!confirm("Remove this item from the universe?")) return;
-
       const { error } = await supabase.from("universe_assets").delete().eq("id", assetId);
       if (error) {
         console.error(error);
@@ -1033,36 +929,29 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id, loadUniverseAssets]
   );
-
   const moveAsset = useCallback(
     async (assetId, direction) => {
       const idx = assets.findIndex((a) => a.id === assetId);
       if (idx === -1) return;
-
       const targetIdx = idx + direction;
       if (targetIdx < 0 || targetIdx >= assets.length) return;
-
       const a1 = assets[idx];
       const a2 = assets[targetIdx];
       const so1 = clampInt(a1.sort_order, 0);
       const so2 = clampInt(a2.sort_order, 0);
-
       try {
         setNotice(null);
         setSavingAssetIds((prev) => ({ ...prev, [a1.id]: true, [a2.id]: true }));
-
         const { error: e1 } = await supabase
           .from("universe_assets")
           .update({ sort_order: so2, updated_at: new Date().toISOString() })
           .eq("id", a1.id);
         if (e1) throw e1;
-
         const { error: e2 } = await supabase
           .from("universe_assets")
           .update({ sort_order: so1, updated_at: new Date().toISOString() })
           .eq("id", a2.id);
         if (e2) throw e2;
-
         setNotice({ type: "ok", msg: "Reordered." });
         if (selectedUniverse?.id) await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
@@ -1074,7 +963,6 @@ export default function UniversesTab() {
     },
     [assets, selectedUniverse?.id, loadUniverseAssets]
   );
-
   /** =========================
    * ✅ Upload thumb for existing asset and persist immediately
    * ========================= */
@@ -1089,38 +977,31 @@ export default function UniversesTab() {
         setNotice({ type: "error", msg: "No storage bucket selected." });
         return;
       }
-
       try {
         setUploading(true);
         setNotice(null);
-
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
         const isMp4 = isMp4File(file);
         const folder = isMp4
           ? `videos/universes/${slug}/universe-items/${asset.id}/thumbnail`
           : `images/universes/${slug}/universe-items/${asset.id}/thumbnail`;
-
         const { publicUrl, path } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder,
           allowed: ["image", "mp4"],
         });
-
         const metaStr = getAssetMetaStr(asset);
         const metaObj = safeJsonParse(metaStr, asset.metadata || {});
         metaObj.storage = metaObj.storage || {};
         metaObj.storage.thumbnail = { bucket: storageBucket, path };
         if (isMp4) metaObj.thumb_kind = "video";
         else if (metaObj.thumb_kind) delete metaObj.thumb_kind;
-
         const { error } = await supabase
           .from("universe_assets")
           .update({ thumbnail_url: publicUrl, metadata: metaObj, updated_at: new Date().toISOString() })
           .eq("id", asset.id);
-
         if (error) throw error;
-
         setNotice({ type: "ok", msg: "Thumbnail uploaded and saved." });
         await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
@@ -1132,7 +1013,6 @@ export default function UniversesTab() {
     },
     [storageBucket, selectedUniverse?.id, selectedUniverse?.slug, uSlug, uTitle, getAssetMetaStr, loadUniverseAssets]
   );
-
   /** =========================
    * Quick Add thumb upload (image OR mp4)
    * ========================= */
@@ -1146,29 +1026,23 @@ export default function UniversesTab() {
       try {
         setUploading(true);
         setNotice(null);
-
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
         const isMp4 = isMp4File(file);
-
         const folder = isMp4
           ? `videos/universes/${slug}/universe-items/thumbnails`
           : `images/universes/${slug}/universe-items/thumbnails`;
-
         const { publicUrl, path } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder,
           allowed: ["image", "mp4"],
         });
-
         setQaThumb(publicUrl);
-
         const nextMeta = safeJsonParse(qaMetaStr, {});
         nextMeta.storage = nextMeta.storage || {};
         nextMeta.storage.thumbnail = { bucket: storageBucket, path };
         if (isMp4) nextMeta.thumb_kind = "video";
         else if (nextMeta.thumb_kind) delete nextMeta.thumb_kind;
-
         setQaMetaStr(JSON.stringify(nextMeta));
         setNotice({ type: "ok", msg: "Thumbnail uploaded. Now click Add Item." });
       } catch (e) {
@@ -1180,7 +1054,6 @@ export default function UniversesTab() {
     },
     [storageBucket, uSlug, selectedUniverse?.slug, uTitle, qaMetaStr]
   );
-
   /** =========================
    * ✅ World Map Gallery + Regions (kept intact)
    * ========================= */
@@ -1196,28 +1069,22 @@ export default function UniversesTab() {
       }
       const list = Array.from(files || []);
       if (!list.length) return;
-
       try {
         setUploading(true);
         setNotice(null);
-
         const maxSort = assets.length ? Math.max(...assets.map((x) => clampInt(x.sort_order, 0))) : 0;
         const slug = (uSlug || selectedUniverse.slug || slugify(uTitle)).trim() || "universe";
-
         const rows = [];
         let nextSort = maxSort + 10;
-
         for (let i = 0; i < list.length; i++) {
           const file = list[i];
           if (!isImageFile(file)) continue;
-
           const { publicUrl, path } = await uploadToStorage({
             bucket: storageBucket,
             file,
             folder: `images/universes/${slug}/world-map/gallery`,
             allowed: ["image"],
           });
-
           const baseTitle = String(file.name || "").replace(/\.[^/.]+$/, "");
           rows.push({
             universe_id: selectedUniverse.id,
@@ -1234,18 +1101,14 @@ export default function UniversesTab() {
             metadata: { kind: "world_map", role: "gallery", storage: { bucket: storageBucket, path } },
             updated_at: new Date().toISOString(),
           });
-
           nextSort += 10;
         }
-
         if (!rows.length) {
           setNotice({ type: "error", msg: "No valid image files selected." });
           return;
         }
-
         const { error } = await supabase.from("universe_assets").insert(rows);
         if (error) throw error;
-
         setNotice({ type: "ok", msg: `Uploaded ${rows.length} world map images and saved to universe_assets.` });
         await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
@@ -1257,26 +1120,21 @@ export default function UniversesTab() {
     },
     [storageBucket, selectedUniverse?.id, selectedUniverse?.slug, assets, uSlug, uTitle, loadUniverseAssets]
   );
-
   const [selectedWorldMapAssetId, setSelectedWorldMapAssetId] = useState(null);
   const [regions, setRegions] = useState([]);
   const [loadingRegions, setLoadingRegions] = useState(false);
   const [savingRegionId, setSavingRegionId] = useState(null);
-
   const loadRegions = useCallback(async (universeId, worldMapAssetId) => {
     if (!universeId) return;
     setLoadingRegions(true);
     setNotice(null);
-
     let q = supabase
       .from("world_map_regions")
       .select("*")
       .eq("universe_id", universeId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
-
     if (worldMapAssetId) q = q.eq("world_map_asset_id", worldMapAssetId);
-
     const { data, error } = await q;
     if (error) {
       console.error(error);
@@ -1287,24 +1145,20 @@ export default function UniversesTab() {
     }
     setLoadingRegions(false);
   }, []);
-
   useEffect(() => {
     if (!selectedUniverse?.id) return;
     loadRegions(selectedUniverse.id, selectedWorldMapAssetId);
   }, [selectedUniverse?.id, selectedWorldMapAssetId, loadRegions]);
-
   const [rTitle, setRTitle] = useState("");
   const [rDesc, setRDesc] = useState("");
   const [rSort, setRSort] = useState(0);
   const [rMeta, setRMeta] = useState("");
-
   const resetRegionForm = useCallback(() => {
     setRTitle("");
     setRDesc("");
     setRSort(0);
     setRMeta("");
   }, []);
-
   const addRegion = useCallback(async () => {
     if (!selectedUniverse?.id) return;
     if (!rTitle.trim()) {
@@ -1314,7 +1168,6 @@ export default function UniversesTab() {
     try {
       setSavingRegionId("new");
       setNotice(null);
-
       const payload = {
         universe_id: selectedUniverse.id,
         world_map_asset_id: selectedWorldMapAssetId || null,
@@ -1323,10 +1176,8 @@ export default function UniversesTab() {
         sort_order: clampInt(rSort, 0),
         metadata: safeJsonParse(rMeta, {}),
       };
-
       const { error } = await supabase.from("world_map_regions").insert([payload]);
       if (error) throw error;
-
       setNotice({ type: "ok", msg: "Region added." });
       resetRegionForm();
       await loadRegions(selectedUniverse.id, selectedWorldMapAssetId);
@@ -1337,7 +1188,6 @@ export default function UniversesTab() {
       setSavingRegionId(null);
     }
   }, [selectedUniverse?.id, selectedWorldMapAssetId, rTitle, rDesc, rSort, rMeta, loadRegions, resetRegionForm]);
-
   const updateRegion = useCallback(
     async (regionId, patch) => {
       try {
@@ -1354,7 +1204,6 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id, selectedWorldMapAssetId, loadRegions]
   );
-
   const deleteRegion = useCallback(
     async (regionId) => {
       if (!confirm("Delete this region?")) return;
@@ -1373,7 +1222,6 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id, selectedWorldMapAssetId, loadRegions]
   );
-
   /** =========================
    * Quick add custom asset (existing)
    * ========================= */
@@ -1386,17 +1234,13 @@ export default function UniversesTab() {
       setNotice({ type: "error", msg: "Title is required for the universe item." });
       return;
     }
-
     try {
       setNotice(null);
-
       const maxSort = assets.length ? Math.max(...assets.map((x) => clampInt(x.sort_order, 0))) : 0;
       const dollars = Number(String(qaPrice || "").trim());
       const priceCents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
-
       const metaObj = safeJsonParse(qaMetaStr, {});
       const thumbIsVideo = isLikelyMp4Url(qaThumb) || String(metaObj?.thumb_kind || "").toLowerCase() === "video";
-
       const insertRow = {
         universe_id: selectedUniverse.id,
         division: qaDivision,
@@ -1416,10 +1260,8 @@ export default function UniversesTab() {
         },
         updated_at: new Date().toISOString(),
       };
-
       const { error } = await supabase.from("universe_assets").insert([insertRow]);
       if (error) throw error;
-
       setNotice({ type: "ok", msg: "Universe item added." });
       resetQuickAdd();
       await loadUniverseAssets(selectedUniverse.id);
@@ -1443,7 +1285,6 @@ export default function UniversesTab() {
     resetQuickAdd,
     loadUniverseAssets,
   ]);
-
   const primeQuickAddForCharacter = useCallback(() => {
     setQaDivision("studios");
     setQaType("character");
@@ -1454,7 +1295,6 @@ export default function UniversesTab() {
     if (!qaTitle) setQaTitle("Character — Name");
     if (!qaDesc) setQaDesc("Bio / role / motivation / arc.");
   }, [qaMetaStr, qaTitle, qaDesc]);
-
   /** =========================
    * ✅ Local backfill tool
    * ========================= */
@@ -1466,28 +1306,23 @@ export default function UniversesTab() {
         .from("universe_assets")
         .select("id,external_url,thumbnail_url")
         .eq("universe_id", selectedUniverse.id);
-
       if (error) throw error;
-
       const toFix = (data || []).filter(
         (r) =>
           (!r.thumbnail_url || !String(r.thumbnail_url).trim()) &&
           r.external_url &&
           /\.(png|jpg|jpeg|webp|gif|mp4)$/i.test(String(r.external_url))
       );
-
       if (!toFix.length) {
         setNotice({ type: "ok", msg: "No thumbnails to backfill." });
         return;
       }
-
       for (const row of toFix) {
         await supabase
           .from("universe_assets")
           .update({ thumbnail_url: row.external_url, updated_at: new Date().toISOString() })
           .eq("id", row.id);
       }
-
       setNotice({ type: "ok", msg: `Backfilled ${toFix.length} thumbnails from external_url.` });
       await loadUniverseAssets(selectedUniverse.id);
     } catch (e) {
@@ -1495,7 +1330,6 @@ export default function UniversesTab() {
       setNotice({ type: "error", msg: e?.message || "Backfill failed" });
     }
   }, [selectedUniverse?.id, loadUniverseAssets]);
-
   /** =========================
    * Derived views
    * ========================= */
@@ -1503,12 +1337,10 @@ export default function UniversesTab() {
     () => assets.filter((a) => a.asset_type === "character" && (!a.thumbnail_url || !String(a.thumbnail_url).trim())).length,
     [assets]
   );
-
   const missingWorldMapTitleCount = useMemo(
     () => assets.filter((a) => a.asset_type === "world_map" && (!a.title || !String(a.title).trim())).length,
     [assets]
   );
-
   const universeStatusBadge = useMemo(() => {
     const s = String(selectedUniverse?.status || uStatus || "draft");
     const isPub = s === "published";
@@ -1522,12 +1354,10 @@ export default function UniversesTab() {
       </span>
     );
   }, [selectedUniverse?.status, uStatus]);
-
   const worldMapAssets = useMemo(
     () => assets.filter((a) => String(a.asset_type || "").toLowerCase() === "world_map"),
     [assets]
   );
-
   /** =========================
    * Render
    * ========================= */
@@ -1539,11 +1369,9 @@ export default function UniversesTab() {
           <p className="text-sm opacity-70">
             Create a universe, publish it, then curate items (world maps, characters, trailers, audio, decks) into the Studio page.
           </p>
-
           <div className="mt-2 flex items-center gap-2 flex-wrap text-[11px] opacity-70">
             <span>Storage bucket:</span>
             <code className="px-2 py-0.5 rounded border">{storageBucket || "NONE"}</code>
-
             {bucketReady && buckets.length > 0 && (
               <select
                 className="border rounded-xl p-1 text-[12px]"
@@ -1560,13 +1388,11 @@ export default function UniversesTab() {
                 ))}
               </select>
             )}
-
             {bucketReady && !storageBucket && (
               <span className="text-red-700">Create a bucket in Supabase → Storage (ex: assets) to enable uploads.</span>
             )}
           </div>
         </div>
-
         <button
           className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-50"
           onClick={() => {
@@ -1590,7 +1416,6 @@ export default function UniversesTab() {
           + New Universe
         </button>
       </div>
-
       {notice?.msg && (
         <div
           className={`rounded-xl border p-3 text-sm ${
@@ -1602,7 +1427,6 @@ export default function UniversesTab() {
           {notice.msg}
         </div>
       )}
-
       {/* Universe list + editor */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="rounded-2xl border border-gray-200 p-4">
@@ -1642,7 +1466,6 @@ export default function UniversesTab() {
             </div>
           )}
         </div>
-
         <div className="lg:col-span-2 rounded-2xl border border-gray-200 p-4">
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div className="font-semibold">{canEditUniverse ? "Edit Universe" : "Create Universe"}</div>
@@ -1660,7 +1483,6 @@ export default function UniversesTab() {
               )}
             </div>
           </div>
-
           {/* Warnings */}
           {canEditUniverse && (missingCharacterThumbCount > 0 || missingWorldMapTitleCount > 0) && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -1676,7 +1498,6 @@ export default function UniversesTab() {
               </div>
             </div>
           )}
-
           {!storageBucket && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
               <div className="font-semibold">Uploads disabled</div>
@@ -1686,7 +1507,6 @@ export default function UniversesTab() {
               </div>
             </div>
           )}
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label className="text-sm">
               Title
@@ -1701,27 +1521,22 @@ export default function UniversesTab() {
                 placeholder="Legacy of the Hidden Clans"
               />
             </label>
-
             <label className="text-sm">
               Slug
               <input className="mt-1 w-full border rounded-xl p-2" value={uSlug} onChange={(e) => setUSlug(slugify(e.target.value))} />
             </label>
-
             <label className="text-sm md:col-span-2">
               Tagline
               <input className="mt-1 w-full border rounded-xl p-2" value={uTagline} onChange={(e) => setUTagline(e.target.value)} />
             </label>
-
             <label className="text-sm md:col-span-2">
               Logline
               <input className="mt-1 w-full border rounded-xl p-2" value={uLogline} onChange={(e) => setULogline(e.target.value)} />
             </label>
-
             <label className="text-sm md:col-span-2">
               Synopsis
               <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[110px]" value={uSynopsis} onChange={(e) => setUSynopsis(e.target.value)} />
             </label>
-
             {/* Cover */}
             <label className="text-sm">
               Cover Image URL
@@ -1731,7 +1546,6 @@ export default function UniversesTab() {
                 {uCover ? <img src={uCover} alt="" className="h-16 w-16 rounded-xl object-cover border" /> : null}
               </div>
             </label>
-
             {/* Hero Video */}
             <label className="text-sm">
               Hero Video URL
@@ -1744,7 +1558,18 @@ export default function UniversesTab() {
               </div>
               <div className="text-[11px] opacity-60 mt-1">Uploads mp4 into Storage and saves to universes.hero_video_url.</div>
             </label>
-
+            {/* Trailer Video */}
+            <label className="text-sm">
+              Trailer Video URL
+              <input className="mt-1 w-full border rounded-xl p-2" value={uTrailerVideo} onChange={(e) => setUTrailerVideo(e.target.value)} />
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
+                <input type="file" accept="video/mp4" disabled={uploading || !storageBucket} onChange={(e) => uploadTrailerVideoFile(e.target.files?.[0])} />
+                {uTrailerVideo && isLikelyMp4Url(uTrailerVideo) ? (
+                  <video src={uTrailerVideo} className="h-16 w-24 rounded-xl object-cover border" muted playsInline loop autoPlay />
+                ) : null}
+              </div>
+              <div className="text-[11px] opacity-60 mt-1">Uploads mp4 into Storage and saves to universes.trailer_video_url.</div>
+            </label>
             {/* Featured World Map */}
             <label className="text-sm">
               World Map URL (featured)
@@ -1757,7 +1582,6 @@ export default function UniversesTab() {
                 This saves to <code>universes.world_map_url</code> and updates immediately once the universe exists.
               </div>
             </label>
-
             <label className="text-sm">
               Status
               <select className="mt-1 w-full border rounded-xl p-2" value={uStatus} onChange={(e) => setUStatus(e.target.value)}>
@@ -1769,25 +1593,22 @@ export default function UniversesTab() {
               </div>
             </label>
           </div>
-
           <div className="mt-4 flex gap-3 flex-wrap">
             <button
               onClick={() => saveUniverse()}
-              disabled={savingUniverse || !uTitle.trim()}
+              disabled={savingUniverse || uploading || !uTitle.trim()}
               className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50"
             >
-              {savingUniverse ? "Saving…" : "Save"}
+              {savingUniverse ? "Saving…" : uploading ? "Uploading…" : "Save"}
             </button>
-
             <button
               onClick={publishUniverse}
-              disabled={savingUniverse || !uTitle.trim()}
+              disabled={savingUniverse || uploading || !uTitle.trim()}
               className="px-4 py-2 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-900 disabled:opacity-50"
               title="Sets status=published and saves"
             >
               Publish
             </button>
-
             <button
               onClick={unpublishUniverse}
               disabled={savingUniverse || !canEditUniverse}
@@ -1796,7 +1617,6 @@ export default function UniversesTab() {
             >
               Unpublish
             </button>
-
             <button
               onClick={deleteUniverse}
               disabled={savingUniverse || !canEditUniverse}
@@ -1807,7 +1627,6 @@ export default function UniversesTab() {
           </div>
         </div>
       </div>
-
       {/* ✅ WORLD MAP CONTROL CENTER */}
       {selectedUniverse?.id && (
         <div className="rounded-2xl border border-gray-200 p-4">
@@ -1818,12 +1637,10 @@ export default function UniversesTab() {
                 Upload multiple world maps (gallery), set one as featured, and manage Region labels.
               </div>
             </div>
-
             <div className="flex items-center gap-2 flex-wrap">
               <input type="file" accept="image/*" multiple disabled={uploading || !storageBucket} onChange={(e) => uploadWorldMapGallery(e.target.files)} />
             </div>
           </div>
-
           <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Gallery */}
             <div className="rounded-2xl border border-gray-200 p-4">
@@ -1831,7 +1648,6 @@ export default function UniversesTab() {
               <div className="text-[12px] opacity-70 mt-1">
                 Stored in <code>universe_assets</code> as <code>asset_type=world_map</code>.
               </div>
-
               {worldMapAssets.length === 0 ? (
                 <div className="mt-3 text-sm opacity-70">No gallery maps yet. Upload above.</div>
               ) : (
@@ -1855,7 +1671,6 @@ export default function UniversesTab() {
                             </span>
                           ) : null}
                         </div>
-
                         {url ? (
                           <img src={url} alt="" className="mt-2 h-32 w-full object-cover rounded-xl border" />
                         ) : (
@@ -1863,7 +1678,6 @@ export default function UniversesTab() {
                             no image url
                           </div>
                         )}
-
                         <div className="mt-2 flex gap-2 flex-wrap">
                           <button
                             className="px-3 py-1.5 rounded-xl border border-gray-300 text-sm"
@@ -1882,7 +1696,6 @@ export default function UniversesTab() {
                           >
                             Set as Featured
                           </button>
-
                           <button className="px-3 py-1.5 rounded-xl border border-red-300 bg-red-50 text-red-900 text-sm" onClick={() => removeAsset(m.id)}>
                             Delete
                           </button>
@@ -1893,7 +1706,6 @@ export default function UniversesTab() {
                 </div>
               )}
             </div>
-
             {/* Regions */}
             <div className="rounded-2xl border border-gray-200 p-4">
               <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1909,41 +1721,34 @@ export default function UniversesTab() {
                     )}
                   </div>
                 </div>
-
                 <button className="px-3 py-1.5 rounded-xl border border-gray-300 text-sm" onClick={resetRegionForm}>
                   Clear Form
                 </button>
               </div>
-
               {/* Add region */}
               <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <label className="text-sm md:col-span-2">
                   Region title
                   <input className="mt-1 w-full border rounded-xl p-2" value={rTitle} onChange={(e) => setRTitle(e.target.value)} placeholder="The Ember Coast" />
                 </label>
-
                 <label className="text-sm md:col-span-2">
                   Description
                   <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[60px]" value={rDesc} onChange={(e) => setRDesc(e.target.value)} placeholder="Climate, factions, lore..." />
                 </label>
-
                 <label className="text-sm">
                   Sort order
                   <input className="mt-1 w-full border rounded-xl p-2" value={String(rSort)} onChange={(e) => setRSort(e.target.value)} />
                 </label>
-
                 <label className="text-sm">
                   Metadata JSON (optional)
                   <input className="mt-1 w-full border rounded-xl p-2" value={rMeta} onChange={(e) => setRMeta(e.target.value)} placeholder='{"x":0.2,"y":0.7}' />
                 </label>
               </div>
-
               <div className="mt-3 flex gap-2">
                 <button className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50" onClick={addRegion} disabled={savingRegionId}>
                   {savingRegionId === "new" ? "Adding…" : "Add Region"}
                 </button>
               </div>
-
               {/* List regions */}
               <div className="mt-4">
                 {loadingRegions ? (
@@ -1975,10 +1780,8 @@ export default function UniversesTab() {
                               </button>
                             </div>
                           </div>
-
                           {r.description ? <div className="text-sm opacity-80 mt-1">{r.description}</div> : null}
                           <div className="text-[11px] opacity-60 mt-1">sort: {r.sort_order}</div>
-
                           <div className="mt-2 flex gap-2 flex-wrap">
                             <button
                               className="px-3 py-1.5 rounded-xl border border-gray-300 text-sm disabled:opacity-50"
@@ -1993,7 +1796,6 @@ export default function UniversesTab() {
                             >
                               Load into form
                             </button>
-
                             <button
                               className="px-3 py-1.5 rounded-xl border border-gray-300 text-sm disabled:opacity-50"
                               disabled={isSaving}
@@ -2008,7 +1810,6 @@ export default function UniversesTab() {
                             >
                               {isSaving ? "Updating…" : "Update from form"}
                             </button>
-
                             <button
                               className="px-3 py-1.5 rounded-xl border border-red-300 bg-red-50 text-red-900 text-sm disabled:opacity-50"
                               disabled={isSaving}
@@ -2027,7 +1828,6 @@ export default function UniversesTab() {
           </div>
         </div>
       )}
-
       {/* Studio Pages (kept intact) */}
       {selectedUniverse?.id && (
         <div className="rounded-2xl border border-gray-200 p-4">
@@ -2038,12 +1838,10 @@ export default function UniversesTab() {
                 Published pages render on <code>/studios/[slug]</code>.
               </div>
             </div>
-
             <button className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-50" onClick={resetPageEditor}>
               + New Page
             </button>
           </div>
-
           <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="rounded-2xl border border-gray-200 p-3">
               <div className="font-semibold mb-2">Pages</div>
@@ -2079,14 +1877,12 @@ export default function UniversesTab() {
                 </div>
               )}
             </div>
-
             <div className="lg:col-span-2 rounded-2xl border border-gray-200 p-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <label className="text-sm md:col-span-2">
                   Title
                   <input className="mt-1 w-full border rounded-xl p-2" value={pTitle} onChange={(e) => setPTitle(e.target.value)} />
                 </label>
-
                 <label className="text-sm">
                   Type
                   <select className="mt-1 w-full border rounded-xl p-2" value={pType} onChange={(e) => setPType(e.target.value)}>
@@ -2097,7 +1893,6 @@ export default function UniversesTab() {
                     ))}
                   </select>
                 </label>
-
                 <label className="text-sm">
                   Status
                   <select className="mt-1 w-full border rounded-xl p-2" value={pStatus} onChange={(e) => setPStatus(e.target.value)}>
@@ -2105,27 +1900,22 @@ export default function UniversesTab() {
                     <option value="published">published</option>
                   </select>
                 </label>
-
                 <label className="text-sm">
                   Sort
                   <input className="mt-1 w-full border rounded-xl p-2" value={String(pSort)} onChange={(e) => setPSort(e.target.value)} />
                 </label>
-
                 <label className="text-sm md:col-span-3">
                   Excerpt (optional)
                   <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[60px]" value={pExcerpt} onChange={(e) => setPExcerpt(e.target.value)} />
                 </label>
-
                 <label className="text-sm md:col-span-3">
                   Hero Image URL (optional)
                   <input className="mt-1 w-full border rounded-xl p-2" value={pHeroImg} onChange={(e) => setPHeroImg(e.target.value)} />
                 </label>
-
                 <label className="text-sm md:col-span-3">
                   Hero Video URL (optional)
                   <input className="mt-1 w-full border rounded-xl p-2" value={pHeroVid} onChange={(e) => setPHeroVid(e.target.value)} />
                 </label>
-
                 <label className="text-sm md:col-span-3">
                   Content (Markdown or plain text — paste)
                   <textarea
@@ -2135,25 +1925,21 @@ export default function UniversesTab() {
                   />
                 </label>
               </div>
-
               <div className="mt-4 flex gap-3">
                 <button className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50" onClick={savePage} disabled={!pTitle.trim() || savingPageId}>
                   {savingPageId ? "Saving…" : "Save Page"}
                 </button>
-
                 {pId ? (
                   <button className="px-4 py-2 rounded-xl border border-red-300 bg-red-50 text-red-900 disabled:opacity-50" onClick={deletePage} disabled={savingPageId}>
                     Delete Page
                   </button>
                 ) : null}
               </div>
-
               <div className="mt-3 text-[11px] opacity-60">Tip: set Status=published to show on the public Studio page.</div>
             </div>
           </div>
         </div>
       )}
-
       {/* ✅ NEW: Attach Media Tracks / Audio / Trailers from media.js (posts division=media) */}
       <div className="rounded-2xl border border-gray-200 p-4">
         <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -2163,7 +1949,6 @@ export default function UniversesTab() {
               Pull from <code>posts</code> where <code>division=media</code>. Adds to <code>universe_assets</code> so it renders on <code>/studios/[slug]</code>.
             </div>
           </div>
-
           <div className="flex gap-2 flex-wrap items-center">
             <select className="border rounded-xl p-2" value={mediaTypeFilter} onChange={(e) => setMediaTypeFilter(e.target.value)}>
               {MEDIA_TYPES.map((t) => (
@@ -2172,26 +1957,22 @@ export default function UniversesTab() {
                 </option>
               ))}
             </select>
-
             <input
               className="border rounded-xl p-2"
               value={mediaQuery}
               onChange={(e) => setMediaQuery(e.target.value)}
               placeholder="Search media title or slug…"
             />
-
             <button className="px-4 py-2 rounded-xl border border-gray-300" onClick={searchMediaPosts} disabled={mediaSearching || !selectedUniverse?.id}>
               {mediaSearching ? "Searching…" : "Search Media"}
             </button>
           </div>
         </div>
-
         {!selectedUniverse?.id && (
           <div className="mt-4 text-sm rounded-xl border border-amber-200 bg-amber-50 p-3">
             Create or select a universe first. Then you can attach media to it.
           </div>
         )}
-
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           {mediaResults.map((p) => {
             const already = assets.some((a) => {
@@ -2203,11 +1984,9 @@ export default function UniversesTab() {
               if (a.external_url && p?.slug && String(a.external_url) === `/media/${p.slug}`) return true;
               return false;
             });
-
             const playable = p._audio_url || (isAudioLikeUrl(p._media_url) ? p._media_url : "");
             const detailUrl = p.slug ? `/media/${p.slug}` : "";
             const thumb = p._thumb;
-
             return (
               <div key={p.id} className="rounded-2xl border border-gray-200 p-3">
                 <div className="flex items-start justify-between gap-2">
@@ -2224,20 +2003,30 @@ export default function UniversesTab() {
                     </span>
                   ) : null}
                 </div>
-
                 {thumb ? <img src={thumb} alt="" className="mt-3 h-28 w-full object-cover rounded-xl" /> : null}
-
                 <div className="mt-3 space-y-2">
                   {playable ? (
                     <audio controls className="w-full">
-                      <source src={playable} />
+                      <source
+                        src={playable}
+                        type={
+                          /\.mp3(\?|$)/i.test(playable)
+                            ? "audio/mpeg"
+                            : /\.wav(\?|$)/i.test(playable)
+                            ? "audio/wav"
+                            : /\.ogg(\?|$)/i.test(playable)
+                            ? "audio/ogg"
+                            : /\.m4a(\?|$)/i.test(playable)
+                            ? "audio/mp4"
+                            : undefined
+                        }
+                      />
                     </audio>
                   ) : (
                     <div className="text-xs opacity-70">
                       No direct audio URL found in metadata. (That’s okay — Studio can still link to the Media page.)
                     </div>
                   )}
-
                   <div className="flex gap-2 flex-wrap">
                     {detailUrl ? (
                       <a className="text-sm underline" href={detailUrl} target="_blank" rel="noreferrer">
@@ -2250,7 +2039,6 @@ export default function UniversesTab() {
                       </a>
                     ) : null}
                   </div>
-
                   <button
                     className="w-full px-3 py-2 rounded-xl bg-black text-white disabled:opacity-50"
                     onClick={() => addMediaPostToUniverse(p)}
@@ -2263,7 +2051,6 @@ export default function UniversesTab() {
             );
           })}
         </div>
-
         {selectedUniverse?.id && mediaResults.length === 0 && (
           <div className="mt-4 text-sm opacity-70">
             No media results. If you know you have items, confirm your <code>posts</code> table has <code>division='media'</code> and fields
@@ -2271,7 +2058,6 @@ export default function UniversesTab() {
           </div>
         )}
       </div>
-
       {/* Quick add custom item (manual link) */}
       <div className="rounded-2xl border border-gray-200 p-4">
         <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -2279,14 +2065,12 @@ export default function UniversesTab() {
             <div className="font-semibold">Add Universe Item (Manual Link)</div>
             <div className="text-sm opacity-70">Perfect for Characters + Trailers + Decks. Thumbnail uploads now save reliably.</div>
           </div>
-
           <div className="flex gap-2 flex-wrap">
             <button className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-50" onClick={primeQuickAddForCharacter} disabled={!selectedUniverse?.id}>
               + Character Mode
             </button>
           </div>
         </div>
-
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           <label className="text-sm">
             Division
@@ -2300,7 +2084,6 @@ export default function UniversesTab() {
               <option value="realty">realty</option>
             </select>
           </label>
-
           <label className="text-sm">
             Asset Type
             <select className="mt-1 w-full border rounded-xl p-2" value={qaType} onChange={(e) => setQaType(e.target.value)}>
@@ -2325,7 +2108,6 @@ export default function UniversesTab() {
               <option value="mp4">mp4</option>
             </select>
           </label>
-
           <label className="text-sm">
             Status
             <select className="mt-1 w-full border rounded-xl p-2" value={qaStatus} onChange={(e) => setQaStatus(e.target.value)}>
@@ -2333,12 +2115,10 @@ export default function UniversesTab() {
               <option value="draft">draft</option>
             </select>
           </label>
-
           <label className="text-sm md:col-span-2">
             Title
             <input className="mt-1 w-full border rounded-xl p-2" value={qaTitle} onChange={(e) => setQaTitle(e.target.value)} placeholder="Kael — Last Heir" />
           </label>
-
           <label className="text-sm">
             Public?
             <select className="mt-1 w-full border rounded-xl p-2" value={qaPublic ? "yes" : "no"} onChange={(e) => setQaPublic(e.target.value === "yes")}>
@@ -2346,13 +2126,11 @@ export default function UniversesTab() {
               <option value="no">no (premium)</option>
             </select>
           </label>
-
           <label className="text-sm md:col-span-2">
             External URL (YouTube/Spotify/MP3/PDF/etc)
             <input className="mt-1 w-full border rounded-xl p-2" value={qaUrl} onChange={(e) => setQaUrl(e.target.value)} placeholder="https://..." />
             <div className="text-[11px] opacity-60 mt-1">Tip: for songs, use a direct mp3/wav URL for instant audio playback on Studio pages.</div>
           </label>
-
           <label className="text-sm">
             Thumbnail URL
             <input className="mt-1 w-full border rounded-xl p-2" value={qaThumb} onChange={(e) => setQaThumb(e.target.value)} placeholder="https://... OR upload below" />
@@ -2367,23 +2145,19 @@ export default function UniversesTab() {
               ) : null}
             </div>
           </label>
-
           <label className="text-sm">
             Price (USD, premium only)
             <input className="mt-1 w-full border rounded-xl p-2" value={qaPrice} onChange={(e) => setQaPrice(e.target.value)} placeholder="49.00" disabled={qaPublic} />
           </label>
-
           <label className="text-sm md:col-span-3">
             Description
             <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[80px]" value={qaDesc} onChange={(e) => setQaDesc(e.target.value)} />
           </label>
-
           <label className="text-sm md:col-span-3">
             Metadata JSON (optional)
             <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[70px]" value={qaMetaStr} onChange={(e) => setQaMetaStr(e.target.value)} />
           </label>
         </div>
-
         <div className="mt-4 flex gap-3">
           <button className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50" disabled={!selectedUniverse?.id} onClick={addCustomAsset}>
             Add Item
@@ -2393,7 +2167,6 @@ export default function UniversesTab() {
           </button>
         </div>
       </div>
-
       {/* Curate products into universe (existing) */}
       <div className="rounded-2xl border border-gray-200 p-4">
         <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -2401,7 +2174,6 @@ export default function UniversesTab() {
             <div className="font-semibold">Attach Products (from products table)</div>
             <div className="text-sm opacity-70">Search products and add them as universe items.</div>
           </div>
-
           <div className="flex gap-2 flex-wrap">
             <select className="border rounded-xl p-2" value={division} onChange={(e) => setDivision(e.target.value)}>
               <option value="publishing">publishing</option>
@@ -2409,21 +2181,17 @@ export default function UniversesTab() {
               <option value="capital">capital</option>
               <option value="realty">realty</option>
             </select>
-
             <input className="border rounded-xl p-2" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or slug…" />
-
             <button className="px-4 py-2 rounded-xl border border-gray-300" onClick={searchProducts} disabled={searching}>
               {searching ? "Searching…" : "Search"}
             </button>
           </div>
         </div>
-
         {!selectedUniverse?.id && (
           <div className="mt-4 text-sm rounded-xl border border-amber-200 bg-amber-50 p-3">
             Create or select a universe first. Then you can attach products to it.
           </div>
         )}
-
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           {productResults.map((p) => {
             const exists = assets.some((a) => a.source_type === "product" && a.source_product_id === p.id);
@@ -2444,7 +2212,6 @@ export default function UniversesTab() {
           })}
         </div>
       </div>
-
       {/* Current universe items (FULL CRUD) */}
       {selectedUniverse?.id && (
         <div className="rounded-2xl border border-gray-200 p-4">
@@ -2454,7 +2221,6 @@ export default function UniversesTab() {
               Tip: for songs, ensure metadata has <code>audio_url</code> (mp3/wav) so Studio can play instantly.
             </div>
           </div>
-
           {assets.length === 0 ? (
             <div className="opacity-70 text-sm">Nothing attached yet.</div>
           ) : (
@@ -2464,7 +2230,6 @@ export default function UniversesTab() {
                 const isPublic = Boolean(getAssetVal(a, "is_public", a.is_public));
                 const priceCents = clampInt(getAssetVal(a, "price_cents", a.price_cents || 0), a.price_cents || 0);
                 const status = String(getAssetVal(a, "status", a.status || "published") || "published");
-
                 const thumb = getAssetVal(a, "thumbnail_url", a.thumbnail_url || "");
                 const title = getAssetVal(a, "title", a.title || "");
                 const desc = getAssetVal(a, "description", a.description || "");
@@ -2472,14 +2237,11 @@ export default function UniversesTab() {
                 const divisionVal = getAssetVal(a, "division", a.division || "");
                 const typeVal = getAssetVal(a, "asset_type", a.asset_type || "");
                 const sortOrderVal = getAssetVal(a, "sort_order", a.sort_order ?? idx * 10);
-
                 const metaStr = getAssetMetaStr(a);
                 const metaObj = safeJsonParse(metaStr, a.metadata || {});
                 const thumbIsVideo =
                   isLikelyMp4Url(thumb) || String(metaObj?.thumb_kind || "").toLowerCase() === "video";
-
                 const hasAudio = isAudioLikeUrl(exUrl) || isAudioLikeUrl(metaObj?.audio_url || "");
-
                 return (
                   <div key={a.id} className="rounded-2xl border border-gray-200 p-4">
                     <div className="flex items-start gap-3">
@@ -2494,7 +2256,6 @@ export default function UniversesTab() {
                           "no thumb"
                         )}
                       </div>
-
                       <div className="flex-1 min-w-0">
                         <div className="text-[11px] opacity-70 uppercase tracking-[0.22em]">
                           {String(a.division || "").toUpperCase()} • {String(a.asset_type || "").toUpperCase()}
@@ -2507,7 +2268,6 @@ export default function UniversesTab() {
                           </div>
                         )}
                       </div>
-
                       <div className="flex gap-2">
                         <button
                           className="px-3 py-1 rounded-xl border text-sm disabled:opacity-50"
@@ -2525,13 +2285,11 @@ export default function UniversesTab() {
                         </button>
                       </div>
                     </div>
-
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                       <label className="text-sm">
                         Title
                         <input className="mt-1 w-full border rounded-xl p-2" value={title} onChange={(e) => setAssetField(a.id, { title: e.target.value })} />
                       </label>
-
                       <label className="text-sm">
                         Sort Order
                         <input
@@ -2540,12 +2298,10 @@ export default function UniversesTab() {
                           onChange={(e) => setAssetField(a.id, { sort_order: e.target.value })}
                         />
                       </label>
-
                       <label className="text-sm">
                         Division
                         <input className="mt-1 w-full border rounded-xl p-2" value={divisionVal} onChange={(e) => setAssetField(a.id, { division: e.target.value })} />
                       </label>
-
                       <label className="text-sm">
                         Asset Type
                         <input className="mt-1 w-full border rounded-xl p-2" value={typeVal} onChange={(e) => setAssetField(a.id, { asset_type: e.target.value })} />
@@ -2553,12 +2309,10 @@ export default function UniversesTab() {
                           For songs: <code>soundtrack</code> or <code>score</code>. For reads: <code>chapter_read</code>. For video: <code>trailer</code>.
                         </div>
                       </label>
-
                       <label className="text-sm md:col-span-2">
                         Description
                         <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[70px]" value={desc} onChange={(e) => setAssetField(a.id, { description: e.target.value })} />
                       </label>
-
                       <label className="text-sm md:col-span-2">
                         External URL
                         <input className="mt-1 w-full border rounded-xl p-2" value={exUrl} onChange={(e) => setAssetField(a.id, { external_url: e.target.value })} />
@@ -2566,7 +2320,6 @@ export default function UniversesTab() {
                           For audio playback on Studio pages, make this a direct <code>.mp3</code>/<code>.wav</code> or store <code>metadata.audio_url</code>.
                         </div>
                       </label>
-
                       <label className="text-sm md:col-span-2">
                         Thumbnail URL
                         <input className="mt-1 w-full border rounded-xl p-2" value={thumb} onChange={(e) => setAssetField(a.id, { thumbnail_url: e.target.value })} />
@@ -2586,7 +2339,6 @@ export default function UniversesTab() {
                           ) : null}
                         </div>
                       </label>
-
                       <label className="text-sm">
                         Status
                         <select className="mt-1 w-full border rounded-xl p-2" value={status} onChange={(e) => setAssetField(a.id, { status: e.target.value })}>
@@ -2594,7 +2346,6 @@ export default function UniversesTab() {
                           <option value="draft">draft</option>
                         </select>
                       </label>
-
                       <label className="text-sm">
                         Public / Premium
                         <select
@@ -2609,7 +2360,6 @@ export default function UniversesTab() {
                           <option value="premium">premium (gated)</option>
                         </select>
                       </label>
-
                       <label className="text-sm md:col-span-2">
                         Price (cents, premium only)
                         <input
@@ -2620,7 +2370,6 @@ export default function UniversesTab() {
                         />
                         <div className="text-[11px] opacity-60 mt-1">Display: ${toMoney(priceCents)}</div>
                       </label>
-
                       <label className="text-sm md:col-span-2">
                         Metadata JSON
                         <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[70px]" value={metaStr} onChange={(e) => setAssetField(a.id, { metadataStr: e.target.value })} />
@@ -2629,7 +2378,6 @@ export default function UniversesTab() {
                         </div>
                       </label>
                     </div>
-
                     <div className="mt-4 flex gap-3 items-center">
                       {exUrl ? (
                         <a className="text-sm underline" href={exUrl} target="_blank" rel="noreferrer">
@@ -2638,11 +2386,9 @@ export default function UniversesTab() {
                       ) : (
                         <span className="text-sm opacity-60">No link</span>
                       )}
-
                       <button className="ml-auto px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50" disabled={isSaving} onClick={() => saveAsset(a)}>
                         {isSaving ? "Saving…" : "Save Item"}
                       </button>
-
                       <button className="px-4 py-2 rounded-xl border border-red-300 bg-red-50 text-red-900" onClick={() => removeAsset(a.id)} disabled={isSaving}>
                         Remove
                       </button>
