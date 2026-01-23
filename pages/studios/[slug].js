@@ -1657,10 +1657,32 @@ export default function StudioUniverse() {
     let cancelled = false;
     (async () => {
       try {
-        // Pull all publishing products from your existing API
-        const res = await fetch("/api/products?division=publishing");
-        const json = await res.json();
-        const all = asList(json).map((p) => {
+        // Fetch attached publishing products from universe_assets
+        const { data: attached, error: attachedErr } = await supabase
+          .from("universe_assets")
+          .select("source_product_id")
+          .eq("universe_id", universe.id)
+          .eq("source_type", "product")
+          .eq("division", "publishing");
+
+        if (attachedErr) throw attachedErr;
+
+        const ids = attached.map((a) => a.source_product_id).filter(Boolean);
+
+        if (!ids.length) {
+          if (!cancelled) setBookProducts([]);
+          return;
+        }
+
+        const { data: products, error: productsErr } = await supabase
+          .from("products")
+          .select("*")
+          .in("id", ids)
+          .eq("status", "active");
+
+        if (productsErr) throw productsErr;
+
+        const mapped = products.map((p) => {
           const meta = safeJson(p.metadata, {});
           return {
             ...p,
@@ -1668,11 +1690,8 @@ export default function StudioUniverse() {
             display_image: pickProductImage(p),
           };
         });
-        // books only (exclude studio offers)
-        const books = all.filter(isBookProduct);
-        // scope to this universe
-        const scoped = books.filter((p) => matchesUniverseForProduct(p, universe));
-        if (!cancelled) setBookProducts(scoped);
+
+        if (!cancelled) setBookProducts(mapped);
       } catch (e) {
         console.error("studio books fetch error:", e);
         if (!cancelled) setBookProducts([]);
@@ -1681,7 +1700,7 @@ export default function StudioUniverse() {
     return () => {
       cancelled = true;
     };
-  }, [universe?.id, universe?.slug, universe?.title]);
+  }, [universe?.id]);
   const heroImages = useMemo(() => {
     const thumbs = assets.map((x) => getThumb(x)).filter(Boolean).slice(0, 6);
     if (thumbs.length) return thumbs;
