@@ -301,7 +301,7 @@ function Rail({ id, title, lead, items }) {
 
               <div className="mt-4 flex gap-2 flex-wrap">
                 <Link
-                  href={`/media/${item.slug}`}
+                  href={`/blog/${item.slug}`}
                   className="px-3 py-2 rounded-full text-xs font-semibold border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
                 >
                   {primaryCta(item)} Details →
@@ -611,7 +611,7 @@ export default function MediaPage() {
                   </div>
 
                   <div className="mt-4 flex gap-2 flex-wrap">
-                    <Link href={`/media/${item.slug}`} className="text-sm font-semibold underline">
+                    <Link href={`/blog/${item.slug}`} className="text-sm font-semibold underline">
                       {primaryCta(item)} Details →
                     </Link>
                     {item.download_url && (
