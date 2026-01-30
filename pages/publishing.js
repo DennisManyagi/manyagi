@@ -393,102 +393,103 @@ export default function Publishing() {
               const isCheckingOut = checkoutLoadingId === product.id;
 
               return (
-                <Card
-                  key={product.id}
-                  title={product.name}
-                  description={product.description}
-                  image={product.display_image || pickImage(product)}
-                  category="publishing"
-                  tags={Array.isArray(product.tags) ? product.tags : []}
-                >
-                  {chips.length > 0 && (
-                    <div className="flex flex-wrap gap-2 justify-center mb-3">
-                      {chips.map((c) => (
-                        <span
-                          key={c}
-                          className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                        >
-                          {c}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* CTAs */}
-                  <div className="flex flex-wrap gap-3 mt-2 justify-center">
-                    {/* External store wins if present */}
-                    {buyUrl && (
-                      <a
-                        href={buyUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition"
-                      >
-                        Get Your Copy
-                      </a>
+                <Link key={product.id} href={`/publishing/${product.slug}`}>
+                  <Card
+                    title={product.name}
+                    description={product.description}
+                    image={product.display_image || pickImage(product)}
+                    category="publishing"
+                    tags={Array.isArray(product.tags) ? product.tags : []}
+                  >
+                    {chips.length > 0 && (
+                      <div className="flex flex-wrap gap-2 justify-center mb-3">
+                        {chips.map((c) => (
+                          <span
+                            key={c}
+                            className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                      </div>
                     )}
 
-                    {/* Stripe buy for digital (only when no external buyUrl) */}
-                    {!buyUrl && stripePriceId && (
-                      <button
-                        type="button"
-                        disabled={isCheckingOut}
-                        onClick={() => handleStripeCheckout(product)}
-                        className={[
-                          'btn py-2 px-4 rounded transition',
-                          isCheckingOut
-                            ? 'bg-gray-400 text-white cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700',
-                        ].join(' ')}
-                        title={`Stripe: ${stripePriceId}`}
-                      >
-                        {isCheckingOut ? 'Redirecting…' : 'Buy Digital'}
-                      </button>
-                    )}
-
-                    {m.pdf_url && (
-                      <a
-                        href={m.pdf_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn bg-gray-700 text-white py-2 px-4 rounded hover:bg-gray-800 transition"
-                      >
-                        Read Sample
-                      </a>
-                    )}
-                  </div>
-
-                  {alsoLinks.length > 0 && (
-                    <div className="text-xs text-gray-600 dark:text-gray-300 mt-3 text-center">
-                      Also available:{' '}
-                      {alsoLinks.map((l, i) => (
+                    {/* CTAs */}
+                    <div className="flex flex-wrap gap-3 mt-2 justify-center">
+                      {/* External store wins if present */}
+                      {buyUrl && (
                         <a
-                          key={l.label}
-                          href={l.url}
+                          href={buyUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="underline hover:text-blue-700"
+                          className="btn bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition"
                         >
-                          {l.label}
-                          {i < alsoLinks.length - 1 ? ', ' : ''}
+                          Get Your Copy
                         </a>
-                      ))}
-                    </div>
-                  )}
+                      )}
 
-                  {/* Fallback cart only when no buyUrl AND no Stripe price */}
-                  {!buyUrl && !stripePriceId && (
-                    <div className="mt-4 flex justify-center">
-                      <button
-                        type="button"
-                        onClick={() => handleAddToCart(product)}
-                        className="text-xs px-3 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                      >
-                        Add to Manyagi Cart
-                      </button>
+                      {/* Stripe buy for digital (only when no external buyUrl) */}
+                      {!buyUrl && stripePriceId && (
+                        <button
+                          type="button"
+                          disabled={isCheckingOut}
+                          onClick={() => handleStripeCheckout(product)}
+                          className={[
+                            'btn py-2 px-4 rounded transition',
+                            isCheckingOut
+                              ? 'bg-gray-400 text-white cursor-not-allowed'
+                              : 'bg-blue-600 text-white hover:bg-blue-700',
+                          ].join(' ')}
+                          title={`Stripe: ${stripePriceId}`}
+                        >
+                          {isCheckingOut ? 'Redirecting…' : 'Buy Digital'}
+                        </button>
+                      )}
+
+                      {m.pdf_url && (
+                        <a
+                          href={m.pdf_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn bg-gray-700 text-white py-2 px-4 rounded hover:bg-gray-800 transition"
+                        >
+                          Read Sample
+                        </a>
+                      )}
                     </div>
-                  )}
-                </Card>
+
+                    {alsoLinks.length > 0 && (
+                      <div className="text-xs text-gray-600 dark:text-gray-300 mt-3 text-center">
+                        Also available:{' '}
+                        {alsoLinks.map((l, i) => (
+                          <a
+                            key={l.label}
+                            href={l.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline hover:text-blue-700"
+                          >
+                            {l.label}
+                            {i < alsoLinks.length - 1 ? ', ' : ''}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Fallback cart only when no buyUrl AND no Stripe price */}
+                    {!buyUrl && !stripePriceId && (
+                      <div className="mt-4 flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => handleAddToCart(product)}
+                          className="text-xs px-3 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                        >
+                          Add to Manyagi Cart
+                        </button>
+                      </div>
+                    )}
+                  </Card>
+                </Link>
               );
             })
           )}
@@ -507,13 +508,14 @@ export default function Publishing() {
       <section className="container mx-auto px-4 pb-16 -mt-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {startHereBooks.map((p) => (
-            <Card
-              key={p.id}
-              title={p.name}
-              description={p.description}
-              image={p.display_image || pickImage(p)}
-              category="publishing"
-            />
+            <Link key={p.id} href={`/publishing/${p.slug}`}>
+              <Card
+                title={p.name}
+                description={p.description}
+                image={p.display_image || pickImage(p)}
+                category="publishing"
+              />
+            </Link>
           ))}
           {startHereBooks.length < 3 && (
             <p className="col-span-full text-center opacity-70 text-sm">
@@ -539,26 +541,27 @@ export default function Publishing() {
               {sampleBooks.map((p) => {
                 const m = p.metadata || {};
                 return (
-                  <Card
-                    key={p.id}
-                    title={p.name}
-                    description={p.description}
-                    image={p.display_image || pickImage(p)}
-                    category="publishing"
-                  >
-                    {m.pdf_url && (
-                      <div className="mt-3 flex justify-center">
-                        <a
-                          href={m.pdf_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn bg-gray-800 text-white py-2 px-4 rounded text-xs hover:bg-black transition"
-                        >
-                          Read Sample
-                        </a>
-                      </div>
-                    )}
-                  </Card>
+                  <Link key={p.id} href={`/publishing/${p.slug}`}>
+                    <Card
+                      title={p.name}
+                      description={p.description}
+                      image={p.display_image || pickImage(p)}
+                      category="publishing"
+                    >
+                      {m.pdf_url && (
+                        <div className="mt-3 flex justify-center">
+                          <a
+                            href={m.pdf_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn bg-gray-800 text-white py-2 px-4 rounded text-xs hover:bg-black transition"
+                          >
+                            Read Sample
+                          </a>
+                        </div>
+                      )}
+                    </Card>
+                  </Link>
                 );
               })}
             </div>
@@ -580,24 +583,25 @@ export default function Publishing() {
           <section className="container mx-auto px-4 pb-16 -mt-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
               {merchLinkedBooks.map((p) => (
-                <Card
-                  key={p.id}
-                  title={p.name}
-                  description={p.description}
-                  image={p.display_image || pickImage(p)}
-                  category="publishing"
-                >
-                  <div className="mt-3 flex justify-center">
-                    <Link
-                      href={`/designs?collection=${encodeURIComponent(
-                        p.metadata?.series || p.metadata?.book || p.name
-                      )}`}
-                      className="text-xs font-semibold text-blue-600 hover:underline"
-                    >
-                      View merch for this book →
-                    </Link>
-                  </div>
-                </Card>
+                <Link key={p.id} href={`/publishing/${p.slug}`}>
+                  <Card
+                    title={p.name}
+                    description={p.description}
+                    image={p.display_image || pickImage(p)}
+                    category="publishing"
+                  >
+                    <div className="mt-3 flex justify-center">
+                      <Link
+                        href={`/designs?collection=${encodeURIComponent(
+                          p.metadata?.series || p.metadata?.book || p.name
+                        )}`}
+                        className="text-xs font-semibold text-blue-600 hover:underline"
+                      >
+                        View merch for this book →
+                      </Link>
+                    </div>
+                  </Card>
+                </Link>
               ))}
             </div>
           </section>

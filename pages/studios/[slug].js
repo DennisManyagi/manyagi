@@ -1,7 +1,10 @@
+// pages/studios/[slug].js
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
+import { useDispatch } from 'react-redux';
+import { addToCart } from '../lib/cartSlice';
 import Hero from "@/components/Hero";
 import Card from "@/components/Card";
 import SectionIntro from "@/components/SectionIntro";
@@ -1468,6 +1471,7 @@ function pickSoundtrackCandidate({ mediaPosts = [], audioItems = [] }) {
 export default function StudioUniverse() {
   const router = useRouter();
   const { slug } = router.query;
+  const dispatch = useDispatch();
   const [entitledTier, setEntitledTier] = useState("public");
   const [entitlement, setEntitlement] = useState(null);
   // REAL access tier
@@ -1493,6 +1497,7 @@ export default function StudioUniverse() {
   const [loading, setLoading] = useState(true);
   const [tierProducts, setTierProducts] = useState({});
   const [bookProducts, setBookProducts] = useState([]);
+  const [merchProducts, setMerchProducts] = useState([]);
   const [studioOffers, setStudioOffers] = useState([]);
   const [offersLoading, setOffersLoading] = useState(false);
   async function getAccessTokenOrThrow() {
@@ -1701,6 +1706,55 @@ export default function StudioUniverse() {
       cancelled = true;
     };
   }, [universe?.id]);
+  useEffect(() => {
+    if (!universe?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        // Fetch attached designs (merch) products from universe_assets
+        const { data: attached, error: attachedErr } = await supabase
+          .from("universe_assets")
+          .select("source_product_id")
+          .eq("universe_id", universe.id)
+          .eq("source_type", "product")
+          .eq("division", "designs");
+
+        if (attachedErr) throw attachedErr;
+
+        const ids = attached.map((a) => a.source_product_id).filter(Boolean);
+
+        if (!ids.length) {
+          if (!cancelled) setMerchProducts([]);
+          return;
+        }
+
+        const { data: products, error: productsErr } = await supabase
+          .from("products")
+          .select("*")
+          .in("id", ids)
+          .eq("status", "active");
+
+        if (productsErr) throw productsErr;
+
+        const mapped = products.map((p) => {
+          const meta = safeJson(p.metadata, {});
+          return {
+            ...p,
+            metadata: meta,
+            display_image: pickProductImage(p),
+          };
+        });
+
+        if (!cancelled) setMerchProducts(mapped);
+      } catch (e) {
+        console.error("studio merch fetch error:", e);
+        if (!cancelled) setMerchProducts([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [universe?.id]);
   const heroImages = useMemo(() => {
     const thumbs = assets.map((x) => getThumb(x)).filter(Boolean).slice(0, 6);
     if (thumbs.length) return thumbs;
@@ -1776,9 +1830,16 @@ export default function StudioUniverse() {
   const audioItems = useMemo(() => {
     const isAudioLike = (it) => {
       const t = normalizeType(it.media_type);
-      if (["soundtrack", "score", "chapter_read", "audiobook", "scene"].includes(t)) return true;
       const url = safeStr(it.audio_url || it.media_url);
-      return isDirectAudio(url) || url.includes("spotify.com") || isYoutube(url) || url.includes("soundcloud.com");
+      if (!url) return false;
+      if (t === "trailer") return false;
+      return (
+        ["soundtrack", "score", "chapter_read", "audiobook", "scene"].includes(t) ||
+        isDirectAudio(url) ||
+        isYoutube(url) ||
+        url.includes("spotify.com") ||
+        url.includes("soundcloud.com")
+      );
     };
     return (mediaPosts || []).filter(isAudioLike);
   }, [mediaPosts]);
@@ -1848,7 +1909,7 @@ export default function StudioUniverse() {
     const signals = [];
     if (trailerUrl) signals.push("Trailer Ready");
     if (audioItems.length) signals.push(`${audioItems.length} Audio Cues`);
-    if (merchAssets.length) signals.push(`${merchAssets.length} Merch Mockups`);
+    if (merchProducts.length) signals.push(`${merchProducts.length} Merch Mockups`);
     if (characterAssets.length) signals.push(`${characterAssets.length} Characters`);
     if (hasWorldMapSection) signals.push("World Map");
     if (producerPacket) signals.push("Producer Packet (Gated)");
@@ -1860,7 +1921,7 @@ export default function StudioUniverse() {
   }, [
     trailerUrl,
     audioItems.length,
-    merchAssets.length,
+    merchProducts.length,
     characterAssets.length,
     hasWorldMapSection,
     producerPacket,
@@ -2015,10 +2076,7 @@ export default function StudioUniverse() {
               📦 Producer Materials
             </a>
           ) : null}
-          <a
-            href="#vault"
-            className="btn bg-white/90 text-gray-900 border border-gray-200 py-2 px-4 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800"
-          >
+          <a href="#vault" className="btn bg-white/90 text-gray-900 border border-gray-200 py-2 px-4 rounded hover:bg-gray-100 transition dark:bg-gray-900 dark:text-white dark:border-gray-700 dark:hover:bg-gray-800">
             View Adaptation Assets
           </a>
           <a href={producerEmailHref} className="btn bg-amber-200 text-amber-950 py-2 px-4 rounded hover:bg-amber-300 transition">
@@ -2116,7 +2174,7 @@ export default function StudioUniverse() {
               </div>
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Merch</div>
-                <div className="text-sm font-semibold text-right">{merchAssets.length ? `${merchAssets.length}` : "—"}</div>
+                <div className="text-sm font-semibold text-right">{merchProducts.length ? `${merchProducts.length}` : "—"}</div>
               </div>
               <div className="flex items-start justify-between gap-4">
                 <div className="text-sm opacity-70">Producer Materials</div>
@@ -2134,7 +2192,7 @@ export default function StudioUniverse() {
               <div className="text-xs opacity-80 mt-1">Company • budget • timeline</div>
               <a
                 href={producerEmailHref}
-                className="mt-4 inline-flex w-full justify-center px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black font-semibold"
+                className="mt-3 inline-flex w-full justify-center px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black font-semibold"
               >
                 Request Conversation
               </a>
@@ -2492,7 +2550,22 @@ export default function StudioUniverse() {
 ) : null}
       <SectionIntro id="visuals" kicker="Visual Identity" title="Merch" lead="Merch mockups for brand extension, drops, and audience capture." tone="neutral" align="center" />
       <section className="container mx-auto px-4 pb-14 -mt-6">
-        {merchAssets.length ? (
+        {merchProducts.length ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {merchProducts.slice(0, 12).map((product) => (
+              <Link key={product.id} href={`/designs/${product.slug}`}>
+                <Card
+                  title={product.name}
+                  description={product.description}
+                  image={product.display_image}
+                  category="designs"
+                  buyButton={product}
+                  onBuy={() => dispatch(addToCart({ ...product, productType: 'merch', printful_product_id: product.printful_product_id, metadata: product.metadata || {} }))}
+                />
+              </Link>
+            ))}
+          </div>
+        ) : merchAssets.length ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {merchAssets.slice(0, 12).map((a) => (
               <div key={a.id} className="rounded-3xl overflow-hidden border border-gray-200/80 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm">

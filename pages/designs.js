@@ -133,6 +133,7 @@ export default function Designs() {
             printful_product_id: 'fallback-tee-id',
             productType: 'merch',
             metadata: { book: 'Sample', prompt: 1 },
+            slug: 'sample-t-shirt',
           },
         ];
         setItems(sample);
@@ -580,15 +581,16 @@ export default function Designs() {
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5">
               {items.map((product) => (
-                <Card
-                  key={product.id}
-                  title={product.name}
-                  description={`${product.description} Made with premium materials for lasting comfort.`}
-                  image={product.display_image}
-                  category="designs"
-                  buyButton={product}
-                  onBuy={() => handleAddToCart(product)}
-                />
+                <Link key={product.id} href={`/designs/${product.slug}`}>
+                  <Card
+                    title={product.name}
+                    description={`${product.description} Made with premium materials for lasting comfort.`}
+                    image={product.display_image}
+                    category="designs"
+                    buyButton={product}
+                    onBuy={() => handleAddToCart(product)}
+                  />
+                </Link>
               ))}
             </div>
 
@@ -623,31 +625,32 @@ export default function Designs() {
               {featuredCollections.map((p) => {
                 const m = p.metadata || {};
                 return (
-                  <Card
-                    key={p.id}
-                    title={m.drop || m.series || p.name}
-                    description={p.description}
-                    image={p.display_image}
-                    category="designs"
-                  >
-                    {m.book && (
-                      <div className="mb-2 flex justify-center">
-                        <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                          From {m.book}
-                        </span>
+                  <Link key={p.id} href={`/designs/${p.slug}`}>
+                    <Card
+                      title={m.drop || m.series || p.name}
+                      description={p.description}
+                      image={p.display_image}
+                      category="designs"
+                    >
+                      {m.book && (
+                        <div className="mb-2 flex justify-center">
+                          <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                            From {m.book}
+                          </span>
+                        </div>
+                      )}
+                      <div className="mt-3 flex justify-center">
+                        <Link
+                          href={`/designs?collection=${encodeURIComponent(
+                            m.drop || m.series || m.book || ''
+                          )}`}
+                          className="text-xs font-semibold text-blue-600 hover:underline"
+                        >
+                          View this collection →
+                        </Link>
                       </div>
-                    )}
-                    <div className="mt-3 flex justify-center">
-                      <Link
-                        href={`/designs?collection=${encodeURIComponent(
-                          m.drop || m.series || m.book || ''
-                        )}`}
-                        className="text-xs font-semibold text-blue-600 hover:underline"
-                      >
-                        View this collection →
-                      </Link>
-                    </div>
-                  </Card>
+                    </Card>
+                  </Link>
                 );
               })}
             </div>
@@ -672,44 +675,45 @@ export default function Designs() {
                 const m = product.metadata || {};
                 const nftUrl = m.nft_url || m.nft_link || '';
                 return (
-                  <Card
-                    key={product.id}
-                    title={product.name}
-                    description={product.description}
-                    image={product.display_image}
-                    category="designs"
-                  >
-                    <div className="flex flex-wrap gap-2 justify-center mb-3">
-                      <span className="text-[11px] px-2 py-1 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200">
-                        NFT / Digital Collectible
-                      </span>
-                      {m.book && (
-                        <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                          {m.book}
+                  <Link key={product.id} href={`/designs/${product.slug}`}>
+                    <Card
+                      title={product.name}
+                      description={product.description}
+                      image={product.display_image}
+                      category="designs"
+                    >
+                      <div className="flex flex-wrap gap-2 justify-center mb-3">
+                        <span className="text-[11px] px-2 py-1 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200">
+                          NFT / Digital Collectible
                         </span>
-                      )}
-                    </div>
+                        {m.book && (
+                          <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                            {m.book}
+                          </span>
+                        )}
+                      </div>
 
-                    <div className="mt-3 flex justify-center gap-2 flex-wrap">
-                      {nftUrl && (
-                        <a
-                          href={nftUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn bg-purple-600 text-white py-2 px-4 rounded text-xs hover:bg-purple-700 transition"
+                      <div className="mt-3 flex justify-center gap-2 flex-wrap">
+                        {nftUrl && (
+                          <a
+                            href={nftUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn bg-purple-600 text-white py-2 px-4 rounded text-xs hover:bg-purple-700 transition"
+                          >
+                            View NFT
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleAddToCart(product)}
+                          className="btn bg-gray-900 text-white py-2 px-4 rounded text-xs hover:bg-black transition"
                         >
-                          View NFT
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleAddToCart(product)}
-                        className="btn bg-gray-900 text-white py-2 px-4 rounded text-xs hover:bg-black transition"
-                      >
-                        Get the Physical
-                      </button>
-                    </div>
-                  </Card>
+                          Get the Physical
+                        </button>
+                      </div>
+                    </Card>
+                  </Link>
                 );
               })}
             </div>
@@ -733,28 +737,29 @@ export default function Designs() {
               {bestsellerDesigns.map((product) => {
                 const m = product.metadata || {};
                 return (
-                  <Card
-                    key={product.id}
-                    title={product.name}
-                    description={product.description}
-                    image={product.display_image}
-                    category="designs"
-                  >
-                    {m.book && (
-                      <div className="mb-2 flex justify-center">
-                        <span className="text-[11px] px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200">
-                          Fan favorite from {m.book}
-                        </span>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleAddToCart(product)}
-                      className="mt-3 w-full inline-flex justify-center rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition"
+                  <Link key={product.id} href={`/designs/${product.slug}`}>
+                    <Card
+                      title={product.name}
+                      description={product.description}
+                      image={product.display_image}
+                      category="designs"
                     >
-                      Add to Cart
-                    </button>
-                  </Card>
+                      {m.book && (
+                        <div className="mb-2 flex justify-center">
+                          <span className="text-[11px] px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200">
+                            Fan favorite from {m.book}
+                          </span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleAddToCart(product)}
+                        className="mt-3 w-full inline-flex justify-center rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition"
+                      >
+                        Add to Cart
+                      </button>
+                    </Card>
+                  </Link>
                 );
               })}
             </div>
@@ -778,31 +783,32 @@ export default function Designs() {
               {wallArtDesigns.map((product) => {
                 const m = product.metadata || {};
                 return (
-                  <Card
-                    key={product.id}
-                    title={product.name}
-                    description={product.description}
-                    image={product.display_image}
-                    category="designs"
-                  >
-                    <div className="flex flex-wrap gap-2 justify-center mb-2">
-                      <span className="text-[11px] px-2 py-1 rounded-full bg-blue-50 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200">
-                        Poster / Wall Art
-                      </span>
-                      {m.book && (
-                        <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                          {m.book}
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleAddToCart(product)}
-                      className="mt-3 w-full inline-flex justify-center rounded-md bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-black transition"
+                  <Link key={product.id} href={`/designs/${product.slug}`}>
+                    <Card
+                      title={product.name}
+                      description={product.description}
+                      image={product.display_image}
+                      category="designs"
                     >
-                      Add to Cart
-                    </button>
-                  </Card>
+                      <div className="flex flex-wrap gap-2 justify-center mb-2">
+                        <span className="text-[11px] px-2 py-1 rounded-full bg-blue-50 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200">
+                          Poster / Wall Art
+                        </span>
+                        {m.book && (
+                          <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                            {m.book}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddToCart(product)}
+                        className="mt-3 w-full inline-flex justify-center rounded-md bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-black transition"
+                      >
+                        Add to Cart
+                      </button>
+                    </Card>
+                  </Link>
                 );
               })}
             </div>
@@ -826,28 +832,29 @@ export default function Designs() {
               {under25Designs.map((product) => {
                 const m = product.metadata || {};
                 return (
-                  <Card
-                    key={product.id}
-                    title={product.name}
-                    description={product.description}
-                    image={product.display_image}
-                    category="designs"
-                  >
-                    {m.book && (
-                      <div className="mb-2 flex justify-center">
-                        <span className="text-[11px] px-2 py-1 rounded-full bg-green-50 text-green-800 dark:bg-green-900/40 dark:text-green-200">
-                          From {m.book}
-                        </span>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleAddToCart(product)}
-                      className="mt-3 w-full inline-flex justify-center rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition"
+                  <Link key={product.id} href={`/designs/${product.slug}`}>
+                    <Card
+                      title={product.name}
+                      description={product.description}
+                      image={product.display_image}
+                      category="designs"
                     >
-                      Add to Cart
-                    </button>
-                  </Card>
+                      {m.book && (
+                        <div className="mb-2 flex justify-center">
+                          <span className="text-[11px] px-2 py-1 rounded-full bg-green-50 text-green-800 dark:bg-green-900/40 dark:text-green-200">
+                            From {m.book}
+                          </span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleAddToCart(product)}
+                        className="mt-3 w-full inline-flex justify-center rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition"
+                      >
+                        Add to Cart
+                      </button>
+                    </Card>
+                  </Link>
                 );
               })}
             </div>

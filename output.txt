@@ -1,6 +1,6 @@
 # PROJECT DUMP
 # Root: /home/blackkungfu/manyagi
-# Generated: 2025-12-28 23:54:32.954865
+# Generated: 2026-01-26 18:06:31.183894
 # Limits: NO LIMITS (danger: huge output possible)
 # Skips: .cache, .git, .husky, .next, .turbo, .venv, .vercel, .vscode, _scanscratch, build, coverage, cypress, dist, node_modules, out, playwright, scan_reports, venv
 # Lockfiles excluded: bun.lockb, package-lock.json, package.lock.json, pnpm-lock.yaml, yarn.lock
@@ -48,11 +48,15 @@
 - /api/site-config
 - /api/stripe-webhook
 - /api/stripe/charge
+- /api/studio/download-packet
+- /api/studio/download-page
 - /api/track
 - /blog
 - /blog/:slug
 - /capital
 - /cart
+- /checkout/studio-cancel
+- /checkout/studio-success
 - /coming-soon
 - /contact
 - /dashboard
@@ -144,6 +148,9 @@ manyagi/
 │   ├── emails
 │   │   ├── bookingReceipt.js
 │   │   └── itineraryEmail.js
+│   ├── studio
+│   │   ├── build-packet.js
+│   │   └── build-pdf.js
 │   ├── adminUtils.js
 │   ├── affiliate.js
 │   ├── cartSlice.js
@@ -192,6 +199,9 @@ manyagi/
 │   │   │   └── webhook.js
 │   │   ├── stripe
 │   │   │   └── charge.js
+│   │   ├── studio
+│   │   │   ├── download-packet.js
+│   │   │   └── download-page.js
 │   │   ├── events.js
 │   │   ├── order-details.js
 │   │   ├── posts.js
@@ -201,6 +211,9 @@ manyagi/
 │   │   └── track.js
 │   ├── blog
 │   │   └── [slug].js
+│   ├── checkout
+│   │   ├── studio-cancel.js
+│   │   └── studio-success.js
 │   ├── media
 │   │   └── [slug].js
 │   ├── r
@@ -9440,11 +9453,9 @@ export default function TechTab({ posts: allPosts, refreshAll }) {
 }
 
 
-===== FILE: components/admin/UniversesTab.js  (size=108444 bytes) =====
-// components/admin/UniversesTab.jsx
+===== FILE: components/admin/UniversesTab.js  (size=111017 bytes) =====
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-
 /** =========================
  * Utils
  * ========================= */
@@ -9457,17 +9468,14 @@ function slugify(str = "") {
     .replace(/-+/g, "-")
     .replace(/(^-|-$)/g, "");
 }
-
 function toMoney(cents = 0) {
   const n = Number(cents || 0);
   return (n / 100).toFixed(2);
 }
-
 function clampInt(v, fallback = 0) {
   const n = parseInt(String(v ?? ""), 10);
   return Number.isFinite(n) ? n : fallback;
 }
-
 function safeJsonParse(str, fallback = {}) {
   try {
     if (!str || !String(str).trim()) return fallback;
@@ -9477,21 +9485,17 @@ function safeJsonParse(str, fallback = {}) {
     return fallback;
   }
 }
-
 function extFromFile(file) {
   const name = String(file?.name || "");
   const idx = name.lastIndexOf(".");
   return idx >= 0 ? name.slice(idx + 1).toLowerCase() : "bin";
 }
-
 function isLikelyMp4Url(url = "") {
   return String(url || "").toLowerCase().includes(".mp4");
 }
-
 function isAudioLikeUrl(url = "") {
   return /\.(mp3|wav|m4a|ogg)$/i.test(String(url || "").split("?")[0]);
 }
-
 function safeMeta(meta) {
   if (!meta) return {};
   if (typeof meta === "object") return meta;
@@ -9505,29 +9509,24 @@ function safeMeta(meta) {
   }
   return {};
 }
-
 /** =========================
  * ✅ Storage helpers (CLIENT-SAFE)
  * ========================= */
 const DEFAULT_BUCKET = process.env.NEXT_PUBLIC_STORAGE_BUCKET || "assets";
-
 function normalizeExt(file) {
   const ext = extFromFile(file);
   return ext === "jpeg" ? "jpg" : ext;
 }
-
 function isMp4File(file) {
   const t = String(file?.type || "").toLowerCase();
   const n = String(file?.name || "").toLowerCase();
   return t === "video/mp4" || n.endsWith(".mp4");
 }
-
 function isImageFile(file) {
   const t = String(file?.type || "").toLowerCase();
   const n = String(file?.name || "").toLowerCase();
   return t.startsWith("image/") || /\.(png|jpg|jpeg|webp|gif)$/i.test(n);
 }
-
 function assertAllowed(file, allowed) {
   if (!file) throw new Error("No file selected.");
   if (allowed.includes("image") && isImageFile(file)) return;
@@ -9535,7 +9534,6 @@ function assertAllowed(file, allowed) {
   const allowedText = allowed.join(", ");
   throw new Error(`Invalid file type. Allowed: ${allowedText}`);
 }
-
 function makeSafeFileName(file) {
   const ext = normalizeExt(file);
   const base = String(file?.name || "file")
@@ -9547,7 +9545,6 @@ function makeSafeFileName(file) {
   const rand = Math.random().toString(16).slice(2);
   return `${Date.now()}-${base || "file"}-${rand}.${ext}`;
 }
-
 async function uploadToStorage({
   bucket = DEFAULT_BUCKET,
   file,
@@ -9557,26 +9554,19 @@ async function uploadToStorage({
 }) {
   if (!bucket) throw new Error("No storage bucket selected.");
   assertAllowed(file, allowed);
-
   const safeName = makeSafeFileName(file);
   const path = `${folder}/${safeName}`;
-
   const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, {
     upsert,
     contentType: file.type || "application/octet-stream",
     cacheControl: "3600",
   });
-
   if (upErr) throw upErr;
-
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   const publicUrl = data?.publicUrl;
-
   if (!publicUrl) throw new Error("Failed to get public URL.");
-
   return { publicUrl, path, bucket };
 }
-
 export default function UniversesTab() {
   /** =========================
    * State
@@ -9584,18 +9574,14 @@ export default function UniversesTab() {
   const [universes, setUniverses] = useState([]);
   const [selectedUniverse, setSelectedUniverse] = useState(null);
   const [assets, setAssets] = useState([]);
-
   const [loading, setLoading] = useState(true);
   const [savingUniverse, setSavingUniverse] = useState(false);
   const [uploading, setUploading] = useState(false);
-
   const [notice, setNotice] = useState(null); // {type,msg}
-
   // ✅ Storage bucket handling
   const [buckets, setBuckets] = useState([]);
   const [storageBucket, setStorageBucket] = useState(""); // chosen bucket
   const [bucketReady, setBucketReady] = useState(false);
-
   // Universe form
   const [uTitle, setUTitle] = useState("");
   const [uSlug, setUSlug] = useState("");
@@ -9604,27 +9590,24 @@ export default function UniversesTab() {
   const [uSynopsis, setUSynopsis] = useState("");
   const [uCover, setUCover] = useState("");
   const [uHeroVideo, setUHeroVideo] = useState("");
+  const [uTrailerVideo, setUTrailerVideo] = useState("");
   const [uWorldMap, setUWorldMap] = useState("");
   const [uStatus, setUStatus] = useState("draft"); // draft|published
-
   // Product search (existing)
   const [division, setDivision] = useState("publishing");
   const [query, setQuery] = useState("");
   const [productResults, setProductResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const lastSearchKey = useRef("");
-
   // ✅ NEW: Media search (posts division=media)
   const [mediaQuery, setMediaQuery] = useState("");
   const [mediaTypeFilter, setMediaTypeFilter] = useState("all"); // all|soundtrack|score|trailer|audiobook|chapter_read|scene|playlist|musicvideo
   const [mediaResults, setMediaResults] = useState([]);
   const [mediaSearching, setMediaSearching] = useState(false);
   const lastMediaSearchKey = useRef("");
-
   // Universe asset CRUD
   const [assetEdits, setAssetEdits] = useState({});
   const [savingAssetIds, setSavingAssetIds] = useState({});
-
   // Quick-add (existing)
   const [qaDivision, setQaDivision] = useState("studios");
   const [qaType, setQaType] = useState("trailer");
@@ -9636,12 +9619,10 @@ export default function UniversesTab() {
   const [qaPrice, setQaPrice] = useState("");
   const [qaStatus, setQaStatus] = useState("published");
   const [qaMetaStr, setQaMetaStr] = useState("");
-
   // Studio Pages (keep intact)
   const [studioPages, setStudioPages] = useState([]);
   const [loadingPages, setLoadingPages] = useState(false);
   const [savingPageId, setSavingPageId] = useState(null);
-
   const [pId, setPId] = useState(null);
   const [pType, setPType] = useState("one_sheet");
   const [pTitle, setPTitle] = useState("");
@@ -9651,19 +9632,15 @@ export default function UniversesTab() {
   const [pHeroImg, setPHeroImg] = useState("");
   const [pHeroVid, setPHeroVid] = useState("");
   const [pContent, setPContent] = useState("");
-
   const PAGE_TYPES = useMemo(
     () => ["one_sheet", "series_bible", "press_kit", "negotiation", "roadmap", "prompts", "deck_copy"],
     []
   );
-
   const MEDIA_TYPES = useMemo(
     () => ["all", "soundtrack", "score", "trailer", "audiobook", "chapter_read", "scene", "playlist", "musicvideo"],
     []
   );
-
   const canEditUniverse = Boolean(selectedUniverse?.id);
-
   /** =========================
    * ✅ INIT: client-safe bucket selection
    * ========================= */
@@ -9671,7 +9648,6 @@ export default function UniversesTab() {
     const preferred = DEFAULT_BUCKET;
     setStorageBucket(preferred);
     setBucketReady(true);
-
     (async () => {
       try {
         const { data } = await supabase.storage.listBuckets();
@@ -9681,7 +9657,6 @@ export default function UniversesTab() {
       }
     })();
   }, []);
-
   /** =========================
    * Reset helpers
    * ========================= */
@@ -9693,10 +9668,10 @@ export default function UniversesTab() {
     setUSynopsis("");
     setUCover("");
     setUHeroVideo("");
+    setUTrailerVideo("");
     setUWorldMap("");
     setUStatus("draft");
   }, []);
-
   const resetQuickAdd = useCallback(() => {
     setQaDivision("studios");
     setQaType("trailer");
@@ -9709,7 +9684,6 @@ export default function UniversesTab() {
     setQaStatus("published");
     setQaMetaStr("");
   }, []);
-
   const resetPageEditor = useCallback(() => {
     setPId(null);
     setPType("one_sheet");
@@ -9721,14 +9695,12 @@ export default function UniversesTab() {
     setPHeroVid("");
     setPContent("");
   }, []);
-
   /** =========================
    * Loaders
    * ========================= */
   const loadUniverses = useCallback(async () => {
     setLoading(true);
     setNotice(null);
-
     const { data, error } = await supabase.from("universes").select("*").order("updated_at", { ascending: false });
     if (error) {
       console.error(error);
@@ -9739,17 +9711,14 @@ export default function UniversesTab() {
     }
     setLoading(false);
   }, []);
-
   const loadUniverseAssets = useCallback(async (universeId) => {
     if (!universeId) return;
-
     const { data, error } = await supabase
       .from("universe_assets")
       .select("*")
       .eq("universe_id", universeId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
-
     if (error) {
       console.error(error);
       setAssets([]);
@@ -9757,22 +9726,18 @@ export default function UniversesTab() {
     } else {
       setAssets(data || []);
     }
-
     setAssetEdits({});
     setSavingAssetIds({});
   }, []);
-
   const loadStudioPages = useCallback(async (universeId) => {
     if (!universeId) return;
     setLoadingPages(true);
-
     const { data, error } = await supabase
       .from("studio_pages")
       .select("*")
       .eq("universe_id", universeId)
       .order("sort_order", { ascending: true })
       .order("updated_at", { ascending: false });
-
     if (error) {
       console.error(error);
       setStudioPages([]);
@@ -9782,18 +9747,15 @@ export default function UniversesTab() {
     }
     setLoadingPages(false);
   }, []);
-
   useEffect(() => {
     loadUniverses();
   }, [loadUniverses]);
-
   useEffect(() => {
     if (!selectedUniverse?.id) return;
     loadUniverseAssets(selectedUniverse.id);
     loadStudioPages(selectedUniverse.id);
     resetPageEditor();
   }, [selectedUniverse?.id, loadUniverseAssets, loadStudioPages, resetPageEditor]);
-
   /** =========================
    * Select universe
    * ========================= */
@@ -9806,11 +9768,11 @@ export default function UniversesTab() {
     setUSynopsis(u.synopsis || "");
     setUCover(u.cover_image_url || "");
     setUHeroVideo(u.hero_video_url || "");
+    setUTrailerVideo(u.trailer_video_url || "");
     setUWorldMap(u.world_map_url || "");
     setUStatus(u.status || "draft");
     setNotice(null);
   }, []);
-
   /** =========================
    * Save universe
    * ========================= */
@@ -9818,7 +9780,6 @@ export default function UniversesTab() {
     async (nextStatus) => {
       setSavingUniverse(true);
       setNotice(null);
-
       try {
         const payload = {
           title: uTitle.trim(),
@@ -9826,17 +9787,17 @@ export default function UniversesTab() {
           tagline: uTagline,
           logline: uLogline,
           synopsis: uSynopsis,
-          cover_image_url: uCover,
-          hero_video_url: uHeroVideo,
-          world_map_url: uWorldMap,
+          cover_image_url: (uCover && uCover.trim()) || selectedUniverse?.cover_image_url || "",
+          hero_video_url: (uHeroVideo && uHeroVideo.trim()) || selectedUniverse?.hero_video_url || "",
+          trailer_video_url: (uTrailerVideo && uTrailerVideo.trim()) || selectedUniverse?.trailer_video_url || "",
+          world_map_url: (uWorldMap && uWorldMap.trim()) || selectedUniverse?.world_map_url || "",
           status: (nextStatus || uStatus || "draft").trim(),
           division: "publishing",
           updated_at: new Date().toISOString(),
         };
-
+        console.log("SAVE payload trailer_video_url =", payload.trailer_video_url);
         if (!payload.title) throw new Error("Title is required.");
         if (!payload.slug) throw new Error("Slug is required.");
-
         if (selectedUniverse?.id) {
           const { error } = await supabase.from("universes").update(payload).eq("id", selectedUniverse.id);
           if (error) throw error;
@@ -9850,7 +9811,6 @@ export default function UniversesTab() {
             msg: payload.status === "published" ? "Universe created + published." : "Universe created.",
           });
         }
-
         await loadUniverses();
       } catch (e) {
         console.error(e);
@@ -9859,36 +9819,28 @@ export default function UniversesTab() {
         setSavingUniverse(false);
       }
     },
-    [uTitle, uSlug, uTagline, uLogline, uSynopsis, uCover, uHeroVideo, uWorldMap, uStatus, selectedUniverse?.id, loadUniverses]
+    [uTitle, uSlug, uTagline, uLogline, uSynopsis, uCover, uHeroVideo, uTrailerVideo, uWorldMap, uStatus, selectedUniverse, loadUniverses]
   );
-
   const publishUniverse = useCallback(async () => {
     setUStatus("published");
     await saveUniverse("published");
   }, [saveUniverse]);
-
   const unpublishUniverse = useCallback(async () => {
     setUStatus("draft");
     await saveUniverse("draft");
   }, [saveUniverse]);
-
   const deleteUniverse = useCallback(async () => {
     if (!selectedUniverse?.id) return;
     if (!confirm("Delete this universe AND all its universe items? This cannot be undone.")) return;
-
     try {
       setSavingUniverse(true);
       setNotice(null);
-
       const { error: aErr } = await supabase.from("universe_assets").delete().eq("universe_id", selectedUniverse.id);
       if (aErr) throw aErr;
-
       const { error: pErr } = await supabase.from("studio_pages").delete().eq("universe_id", selectedUniverse.id);
       if (pErr) throw pErr;
-
       const { error: uErr } = await supabase.from("universes").delete().eq("id", selectedUniverse.id);
       if (uErr) throw uErr;
-
       setSelectedUniverse(null);
       resetUniverseForm();
       setAssets([]);
@@ -9897,9 +9849,6 @@ export default function UniversesTab() {
       setProductResults([]);
       setAssetEdits({});
       resetQuickAdd();
-      setMediaResults([]);
-      setMediaQuery("");
-      setMediaTypeFilter("all");
       setNotice({ type: "ok", msg: "Universe deleted." });
       await loadUniverses();
     } catch (e) {
@@ -9909,7 +9858,6 @@ export default function UniversesTab() {
       setSavingUniverse(false);
     }
   }, [selectedUniverse?.id, resetUniverseForm, resetPageEditor, loadUniverses, resetQuickAdd]);
-
   /** =========================
    * ✅ Persist field immediately (cover/map/hero uploads)
    * ========================= */
@@ -9924,7 +9872,6 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id]
   );
-
   /** =========================
    * ✅ Universe Cover Upload
    * ========================= */
@@ -9938,16 +9885,13 @@ export default function UniversesTab() {
       try {
         setUploading(true);
         setNotice(null);
-
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
-
         const { publicUrl } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder: `images/universes/${slug}/cover`,
           allowed: ["image"],
         });
-
         setUCover(publicUrl);
         if (selectedUniverse?.id) await persistUniverseField("cover_image_url", publicUrl);
         setNotice({ type: "ok", msg: "Cover uploaded and saved." });
@@ -9960,7 +9904,6 @@ export default function UniversesTab() {
     },
     [storageBucket, uSlug, uTitle, selectedUniverse?.id, selectedUniverse?.slug, persistUniverseField]
   );
-
   /** =========================
    * ✅ Hero Video Upload
    * ========================= */
@@ -9971,23 +9914,18 @@ export default function UniversesTab() {
         setNotice({ type: "error", msg: "No storage bucket selected." });
         return;
       }
-
       try {
         setUploading(true);
         setNotice(null);
-
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
-
         const { publicUrl } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder: `videos/universes/${slug}/hero`,
           allowed: ["mp4"],
         });
-
         setUHeroVideo(publicUrl);
         if (selectedUniverse?.id) await persistUniverseField("hero_video_url", publicUrl);
-
         setNotice({ type: "ok", msg: "Hero video uploaded and saved." });
       } catch (e) {
         console.error(e);
@@ -9998,7 +9936,39 @@ export default function UniversesTab() {
     },
     [storageBucket, uSlug, uTitle, selectedUniverse?.id, selectedUniverse?.slug, persistUniverseField]
   );
-
+  /** =========================
+   * ✅ Trailer Video Upload
+   * ========================= */
+  const uploadTrailerVideoFile = useCallback(
+    async (file) => {
+      if (!file) return;
+      if (!storageBucket) {
+        setNotice({ type: "error", msg: "No storage bucket selected." });
+        return;
+      }
+      try {
+        setUploading(true);
+        setNotice(null);
+        const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
+        const { publicUrl } = await uploadToStorage({
+          bucket: storageBucket,
+          file,
+          folder: `videos/universes/${slug}/trailer`,
+          allowed: ["mp4"],
+        });
+        console.log("TRAILER UPLOADED publicUrl =", publicUrl);
+        setUTrailerVideo(publicUrl);
+        if (selectedUniverse?.id) await persistUniverseField("trailer_video_url", publicUrl);
+        setNotice({ type: "ok", msg: "Trailer video uploaded and saved." });
+      } catch (e) {
+        console.error(e);
+        setNotice({ type: "error", msg: e?.message || "Trailer video upload failed" });
+      } finally {
+        setUploading(false);
+      }
+    },
+    [storageBucket, uSlug, uTitle, selectedUniverse?.id, selectedUniverse?.slug, persistUniverseField]
+  );
   /** =========================
    * ✅ Featured World Map Upload
    * ========================= */
@@ -10012,19 +9982,15 @@ export default function UniversesTab() {
       try {
         setUploading(true);
         setNotice(null);
-
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
-
         const { publicUrl } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder: `images/universes/${slug}/world-map/featured`,
           allowed: ["image"],
         });
-
         setUWorldMap(publicUrl);
         if (selectedUniverse?.id) await persistUniverseField("world_map_url", publicUrl);
-
         setNotice({ type: "ok", msg: "Featured world map uploaded and saved." });
       } catch (e) {
         console.error(e);
@@ -10035,7 +10001,6 @@ export default function UniversesTab() {
     },
     [storageBucket, uSlug, uTitle, selectedUniverse?.id, selectedUniverse?.slug, persistUniverseField]
   );
-
   /** =========================
    * Studio pages (kept intact)
    * ========================= */
@@ -10050,7 +10015,6 @@ export default function UniversesTab() {
     setPHeroVid(pg.hero_video_url || "");
     setPContent(pg.content_md || "");
   }, []);
-
   const savePage = useCallback(async () => {
     if (!selectedUniverse?.id) {
       setNotice({ type: "error", msg: "Select or create a universe first." });
@@ -10060,10 +10024,8 @@ export default function UniversesTab() {
       setNotice({ type: "error", msg: "Page title is required." });
       return;
     }
-
     setSavingPageId(pId || "new");
     setNotice(null);
-
     const payload = {
       universe_id: selectedUniverse.id,
       page_type: pType,
@@ -10076,7 +10038,6 @@ export default function UniversesTab() {
       content_md: pContent || "",
       updated_at: new Date().toISOString(),
     };
-
     try {
       if (pId) {
         const { error } = await supabase.from("studio_pages").update(payload).eq("id", pId);
@@ -10088,7 +10049,6 @@ export default function UniversesTab() {
         setPId(data.id);
         setNotice({ type: "ok", msg: "Studio page created." });
       }
-
       await loadStudioPages(selectedUniverse.id);
     } catch (e) {
       console.error(e);
@@ -10097,14 +10057,11 @@ export default function UniversesTab() {
       setSavingPageId(null);
     }
   }, [selectedUniverse?.id, pId, pType, pTitle, pStatus, pSort, pExcerpt, pHeroImg, pHeroVid, pContent, loadStudioPages]);
-
   const deletePage = useCallback(async () => {
     if (!selectedUniverse?.id || !pId) return;
     if (!confirm("Delete this studio page?")) return;
-
     setSavingPageId(pId);
     setNotice(null);
-
     try {
       const { error } = await supabase.from("studio_pages").delete().eq("id", pId);
       if (error) throw error;
@@ -10118,7 +10075,6 @@ export default function UniversesTab() {
       setSavingPageId(null);
     }
   }, [selectedUniverse?.id, pId, loadStudioPages, resetPageEditor]);
-
   /** =========================
    * Products attach (existing)
    * ========================= */
@@ -10129,20 +10085,16 @@ export default function UniversesTab() {
       const qtxt = query.trim();
       const searchKey = `${division}::${qtxt}`;
       lastSearchKey.current = searchKey;
-
       let q = supabase
         .from("products")
         .select("id,name,slug,division,price,image_url,tags,description,thumbnail_url,updated_at")
         .eq("division", division)
         .order("updated_at", { ascending: false })
         .limit(12);
-
       if (qtxt) q = q.or(`name.ilike.%${qtxt}%,slug.ilike.%${qtxt}%`);
-
       const { data, error } = await q;
       if (lastSearchKey.current !== searchKey) return;
       if (error) throw error;
-
       setProductResults(data || []);
     } catch (e) {
       console.error(e);
@@ -10152,13 +10104,11 @@ export default function UniversesTab() {
       setSearching(false);
     }
   }, [division, query]);
-
   useEffect(() => {
     if (!selectedUniverse?.id) return;
     if (query.trim() !== "") return;
     searchProducts();
   }, [division, selectedUniverse?.id, query, searchProducts]);
-
   const addProductToUniverse = useCallback(
     async (product) => {
       if (!selectedUniverse?.id) {
@@ -10170,7 +10120,6 @@ export default function UniversesTab() {
         setNotice({ type: "error", msg: "That product is already in this universe." });
         return;
       }
-
       const internalUrl =
         product.division === "publishing"
           ? `/publishing/${product.slug}`
@@ -10181,12 +10130,9 @@ export default function UniversesTab() {
           : product.division === "realty"
           ? `/realty`
           : `/`;
-
       const assetType = product.division === "publishing" ? "book" : product.division === "designs" ? "merch" : "product";
-
       try {
         const maxSort = assets.length ? Math.max(...assets.map((x) => clampInt(x.sort_order, 0))) : 0;
-
         const insertRow = {
           universe_id: selectedUniverse.id,
           division: product.division,
@@ -10207,10 +10153,8 @@ export default function UniversesTab() {
             product_division: product.division,
           },
         };
-
         const { error } = await supabase.from("universe_assets").insert([insertRow]);
         if (error) throw error;
-
         setNotice({ type: "ok", msg: "Added to universe." });
         await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
@@ -10220,7 +10164,6 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id, assets, loadUniverseAssets]
   );
-
   /** =========================
    * ✅ NEW: Media attach (from posts table where division='media')
    * Goal:
@@ -10238,12 +10181,10 @@ export default function UniversesTab() {
     }
     setMediaSearching(true);
     setNotice(null);
-
     try {
       const qtxt = mediaQuery.trim();
       const searchKey = `${mediaTypeFilter}::${qtxt}`;
       lastMediaSearchKey.current = searchKey;
-
       // ✅ FIX: removed "thumbnail_url" from select because posts.thumbnail_url does not exist
       let q = supabase
         .from("posts")
@@ -10251,30 +10192,23 @@ export default function UniversesTab() {
         .eq("division", "media")
         .order("updated_at", { ascending: false })
         .limit(20);
-
       if (qtxt) {
         q = q.or(`title.ilike.%${qtxt}%,slug.ilike.%${qtxt}%,excerpt.ilike.%${qtxt}%`);
       }
-
       const { data, error } = await q;
       if (lastMediaSearchKey.current !== searchKey) return;
       if (error) throw error;
-
       let list = (data || []).map((p) => {
         const m = safeMeta(p.metadata);
         const media_type = String(m.media_type || "").trim() || "soundtrack";
-
         const audio_url = String(m.audio_url || "").trim();
         const media_url = String(m.media_url || "").trim();
-
         const bestMediaUrl = audio_url || media_url || "";
-
         // ✅ FIX: never reference p.thumbnail_url; derive thumbnail from metadata + featured_image only
         const thumb =
           String(m.thumbnail_url || m.thumb_url || m.cover_url || "").trim() ||
           String(p.featured_image || "").trim() ||
           "";
-
         return {
           ...p,
           _meta: m,
@@ -10285,11 +10219,9 @@ export default function UniversesTab() {
           _thumb: thumb,
         };
       });
-
       if (mediaTypeFilter !== "all") {
         list = list.filter((p) => String(p._media_type || "").toLowerCase() === String(mediaTypeFilter).toLowerCase());
       }
-
       setMediaResults(list);
     } catch (e) {
       console.error(e);
@@ -10299,21 +10231,18 @@ export default function UniversesTab() {
       setMediaSearching(false);
     }
   }, [selectedUniverse?.id, mediaQuery, mediaTypeFilter]);
-
   useEffect(() => {
     if (!selectedUniverse?.id) return;
     // auto-load “recent media” once universe is selected
     if (mediaQuery.trim() !== "") return;
     searchMediaPosts();
   }, [selectedUniverse?.id, mediaTypeFilter, mediaQuery, searchMediaPosts]);
-
   const addMediaPostToUniverse = useCallback(
     async (post) => {
       if (!selectedUniverse?.id) {
         setNotice({ type: "error", msg: "Select or create a universe first." });
         return;
       }
-
       // de-dupe by metadata.post_id OR by external_url === /media/slug
       const already = assets.some((a) => {
         if (a.source_type === "post") {
@@ -10324,31 +10253,24 @@ export default function UniversesTab() {
         if (a.external_url && post?.slug && String(a.external_url) === `/media/${post.slug}`) return true;
         return false;
       });
-
       if (already) {
         setNotice({ type: "error", msg: "That media item is already attached to this universe." });
         return;
       }
-
       try {
         const maxSort = assets.length ? Math.max(...assets.map((x) => clampInt(x.sort_order, 0))) : 0;
         const m = safeMeta(post._meta || post.metadata);
-
         // prefer a playable url for Studio preview (audio first)
         const audio_url = String(m.audio_url || post._audio_url || "").trim();
         const media_url = String(m.media_url || post._media_url || "").trim();
         const playable = audio_url || (isAudioLikeUrl(media_url) ? media_url : "");
-
         // Always set internal detail page too
         const detailUrl = post?.slug ? `/media/${post.slug}` : "";
-
         // Use playable url if present; otherwise link to the detail page so Studio can still open it
         const external_url = playable || media_url || detailUrl;
-
         // asset_type should map to your studio renderer categories
         // (you can adjust mappings here without touching Studio code)
         const asset_type = String(m.media_type || post._media_type || "soundtrack").trim() || "soundtrack";
-
         const insertRow = {
           universe_id: selectedUniverse.id,
           division: "media",
@@ -10378,10 +10300,8 @@ export default function UniversesTab() {
           },
           updated_at: new Date().toISOString(),
         };
-
         const { error } = await supabase.from("universe_assets").insert([insertRow]);
         if (error) throw error;
-
         setNotice({ type: "ok", msg: "Media added to universe." });
         await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
@@ -10391,14 +10311,12 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id, assets, loadUniverseAssets]
   );
-
   /** =========================
    * Asset edit helpers (existing)
    * ========================= */
   const setAssetField = useCallback((assetId, patch) => {
     setAssetEdits((prev) => ({ ...prev, [assetId]: { ...(prev[assetId] || {}), ...patch } }));
   }, []);
-
   const getAssetVal = useCallback(
     (asset, key, fallback = "") => {
       const row = assetEdits[asset.id] || {};
@@ -10407,7 +10325,6 @@ export default function UniversesTab() {
     },
     [assetEdits]
   );
-
   const getAssetMetaStr = useCallback(
     (asset) => {
       const row = assetEdits[asset.id] || {};
@@ -10416,7 +10333,6 @@ export default function UniversesTab() {
     },
     [assetEdits]
   );
-
   const saveAsset = useCallback(
     async (asset) => {
       const row = assetEdits[asset.id] || {};
@@ -10424,11 +10340,9 @@ export default function UniversesTab() {
         setNotice({ type: "ok", msg: "No changes to save." });
         return;
       }
-
       try {
         setSavingAssetIds((prev) => ({ ...prev, [asset.id]: true }));
         setNotice(null);
-
         const payload = {};
         if (row.title !== undefined) payload.title = row.title;
         if (row.description !== undefined) payload.description = row.description;
@@ -10442,13 +10356,10 @@ export default function UniversesTab() {
         if (row.price_cents !== undefined) payload.price_cents = clampInt(row.price_cents, 0);
         if (row.metadataStr !== undefined) payload.metadata = safeJsonParse(row.metadataStr, asset.metadata || {});
         payload.updated_at = new Date().toISOString();
-
         const { error } = await supabase.from("universe_assets").update(payload).eq("id", asset.id);
         if (error) throw error;
-
         setAssetEdits((prev) => ({ ...prev, [asset.id]: {} }));
         setNotice({ type: "ok", msg: "Universe item saved." });
-
         if (selectedUniverse?.id) await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
         console.error(e);
@@ -10459,12 +10370,10 @@ export default function UniversesTab() {
     },
     [assetEdits, selectedUniverse?.id, loadUniverseAssets]
   );
-
   const removeAsset = useCallback(
     async (assetId) => {
       if (!selectedUniverse?.id) return;
       if (!confirm("Remove this item from the universe?")) return;
-
       const { error } = await supabase.from("universe_assets").delete().eq("id", assetId);
       if (error) {
         console.error(error);
@@ -10476,36 +10385,29 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id, loadUniverseAssets]
   );
-
   const moveAsset = useCallback(
     async (assetId, direction) => {
       const idx = assets.findIndex((a) => a.id === assetId);
       if (idx === -1) return;
-
       const targetIdx = idx + direction;
       if (targetIdx < 0 || targetIdx >= assets.length) return;
-
       const a1 = assets[idx];
       const a2 = assets[targetIdx];
       const so1 = clampInt(a1.sort_order, 0);
       const so2 = clampInt(a2.sort_order, 0);
-
       try {
         setNotice(null);
         setSavingAssetIds((prev) => ({ ...prev, [a1.id]: true, [a2.id]: true }));
-
         const { error: e1 } = await supabase
           .from("universe_assets")
           .update({ sort_order: so2, updated_at: new Date().toISOString() })
           .eq("id", a1.id);
         if (e1) throw e1;
-
         const { error: e2 } = await supabase
           .from("universe_assets")
           .update({ sort_order: so1, updated_at: new Date().toISOString() })
           .eq("id", a2.id);
         if (e2) throw e2;
-
         setNotice({ type: "ok", msg: "Reordered." });
         if (selectedUniverse?.id) await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
@@ -10517,7 +10419,6 @@ export default function UniversesTab() {
     },
     [assets, selectedUniverse?.id, loadUniverseAssets]
   );
-
   /** =========================
    * ✅ Upload thumb for existing asset and persist immediately
    * ========================= */
@@ -10532,38 +10433,31 @@ export default function UniversesTab() {
         setNotice({ type: "error", msg: "No storage bucket selected." });
         return;
       }
-
       try {
         setUploading(true);
         setNotice(null);
-
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
         const isMp4 = isMp4File(file);
         const folder = isMp4
           ? `videos/universes/${slug}/universe-items/${asset.id}/thumbnail`
           : `images/universes/${slug}/universe-items/${asset.id}/thumbnail`;
-
         const { publicUrl, path } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder,
           allowed: ["image", "mp4"],
         });
-
         const metaStr = getAssetMetaStr(asset);
         const metaObj = safeJsonParse(metaStr, asset.metadata || {});
         metaObj.storage = metaObj.storage || {};
         metaObj.storage.thumbnail = { bucket: storageBucket, path };
         if (isMp4) metaObj.thumb_kind = "video";
         else if (metaObj.thumb_kind) delete metaObj.thumb_kind;
-
         const { error } = await supabase
           .from("universe_assets")
           .update({ thumbnail_url: publicUrl, metadata: metaObj, updated_at: new Date().toISOString() })
           .eq("id", asset.id);
-
         if (error) throw error;
-
         setNotice({ type: "ok", msg: "Thumbnail uploaded and saved." });
         await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
@@ -10575,7 +10469,6 @@ export default function UniversesTab() {
     },
     [storageBucket, selectedUniverse?.id, selectedUniverse?.slug, uSlug, uTitle, getAssetMetaStr, loadUniverseAssets]
   );
-
   /** =========================
    * Quick Add thumb upload (image OR mp4)
    * ========================= */
@@ -10589,29 +10482,23 @@ export default function UniversesTab() {
       try {
         setUploading(true);
         setNotice(null);
-
         const slug = (uSlug || selectedUniverse?.slug || slugify(uTitle)).trim() || "universe";
         const isMp4 = isMp4File(file);
-
         const folder = isMp4
           ? `videos/universes/${slug}/universe-items/thumbnails`
           : `images/universes/${slug}/universe-items/thumbnails`;
-
         const { publicUrl, path } = await uploadToStorage({
           bucket: storageBucket,
           file,
           folder,
           allowed: ["image", "mp4"],
         });
-
         setQaThumb(publicUrl);
-
         const nextMeta = safeJsonParse(qaMetaStr, {});
         nextMeta.storage = nextMeta.storage || {};
         nextMeta.storage.thumbnail = { bucket: storageBucket, path };
         if (isMp4) nextMeta.thumb_kind = "video";
         else if (nextMeta.thumb_kind) delete nextMeta.thumb_kind;
-
         setQaMetaStr(JSON.stringify(nextMeta));
         setNotice({ type: "ok", msg: "Thumbnail uploaded. Now click Add Item." });
       } catch (e) {
@@ -10623,7 +10510,6 @@ export default function UniversesTab() {
     },
     [storageBucket, uSlug, selectedUniverse?.slug, uTitle, qaMetaStr]
   );
-
   /** =========================
    * ✅ World Map Gallery + Regions (kept intact)
    * ========================= */
@@ -10639,28 +10525,22 @@ export default function UniversesTab() {
       }
       const list = Array.from(files || []);
       if (!list.length) return;
-
       try {
         setUploading(true);
         setNotice(null);
-
         const maxSort = assets.length ? Math.max(...assets.map((x) => clampInt(x.sort_order, 0))) : 0;
         const slug = (uSlug || selectedUniverse.slug || slugify(uTitle)).trim() || "universe";
-
         const rows = [];
         let nextSort = maxSort + 10;
-
         for (let i = 0; i < list.length; i++) {
           const file = list[i];
           if (!isImageFile(file)) continue;
-
           const { publicUrl, path } = await uploadToStorage({
             bucket: storageBucket,
             file,
             folder: `images/universes/${slug}/world-map/gallery`,
             allowed: ["image"],
           });
-
           const baseTitle = String(file.name || "").replace(/\.[^/.]+$/, "");
           rows.push({
             universe_id: selectedUniverse.id,
@@ -10677,18 +10557,14 @@ export default function UniversesTab() {
             metadata: { kind: "world_map", role: "gallery", storage: { bucket: storageBucket, path } },
             updated_at: new Date().toISOString(),
           });
-
           nextSort += 10;
         }
-
         if (!rows.length) {
           setNotice({ type: "error", msg: "No valid image files selected." });
           return;
         }
-
         const { error } = await supabase.from("universe_assets").insert(rows);
         if (error) throw error;
-
         setNotice({ type: "ok", msg: `Uploaded ${rows.length} world map images and saved to universe_assets.` });
         await loadUniverseAssets(selectedUniverse.id);
       } catch (e) {
@@ -10700,26 +10576,21 @@ export default function UniversesTab() {
     },
     [storageBucket, selectedUniverse?.id, selectedUniverse?.slug, assets, uSlug, uTitle, loadUniverseAssets]
   );
-
   const [selectedWorldMapAssetId, setSelectedWorldMapAssetId] = useState(null);
   const [regions, setRegions] = useState([]);
   const [loadingRegions, setLoadingRegions] = useState(false);
   const [savingRegionId, setSavingRegionId] = useState(null);
-
   const loadRegions = useCallback(async (universeId, worldMapAssetId) => {
     if (!universeId) return;
     setLoadingRegions(true);
     setNotice(null);
-
     let q = supabase
       .from("world_map_regions")
       .select("*")
       .eq("universe_id", universeId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
-
     if (worldMapAssetId) q = q.eq("world_map_asset_id", worldMapAssetId);
-
     const { data, error } = await q;
     if (error) {
       console.error(error);
@@ -10730,24 +10601,20 @@ export default function UniversesTab() {
     }
     setLoadingRegions(false);
   }, []);
-
   useEffect(() => {
     if (!selectedUniverse?.id) return;
     loadRegions(selectedUniverse.id, selectedWorldMapAssetId);
   }, [selectedUniverse?.id, selectedWorldMapAssetId, loadRegions]);
-
   const [rTitle, setRTitle] = useState("");
   const [rDesc, setRDesc] = useState("");
   const [rSort, setRSort] = useState(0);
   const [rMeta, setRMeta] = useState("");
-
   const resetRegionForm = useCallback(() => {
     setRTitle("");
     setRDesc("");
     setRSort(0);
     setRMeta("");
   }, []);
-
   const addRegion = useCallback(async () => {
     if (!selectedUniverse?.id) return;
     if (!rTitle.trim()) {
@@ -10757,7 +10624,6 @@ export default function UniversesTab() {
     try {
       setSavingRegionId("new");
       setNotice(null);
-
       const payload = {
         universe_id: selectedUniverse.id,
         world_map_asset_id: selectedWorldMapAssetId || null,
@@ -10766,10 +10632,8 @@ export default function UniversesTab() {
         sort_order: clampInt(rSort, 0),
         metadata: safeJsonParse(rMeta, {}),
       };
-
       const { error } = await supabase.from("world_map_regions").insert([payload]);
       if (error) throw error;
-
       setNotice({ type: "ok", msg: "Region added." });
       resetRegionForm();
       await loadRegions(selectedUniverse.id, selectedWorldMapAssetId);
@@ -10780,7 +10644,6 @@ export default function UniversesTab() {
       setSavingRegionId(null);
     }
   }, [selectedUniverse?.id, selectedWorldMapAssetId, rTitle, rDesc, rSort, rMeta, loadRegions, resetRegionForm]);
-
   const updateRegion = useCallback(
     async (regionId, patch) => {
       try {
@@ -10797,7 +10660,6 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id, selectedWorldMapAssetId, loadRegions]
   );
-
   const deleteRegion = useCallback(
     async (regionId) => {
       if (!confirm("Delete this region?")) return;
@@ -10816,7 +10678,6 @@ export default function UniversesTab() {
     },
     [selectedUniverse?.id, selectedWorldMapAssetId, loadRegions]
   );
-
   /** =========================
    * Quick add custom asset (existing)
    * ========================= */
@@ -10829,17 +10690,13 @@ export default function UniversesTab() {
       setNotice({ type: "error", msg: "Title is required for the universe item." });
       return;
     }
-
     try {
       setNotice(null);
-
       const maxSort = assets.length ? Math.max(...assets.map((x) => clampInt(x.sort_order, 0))) : 0;
       const dollars = Number(String(qaPrice || "").trim());
       const priceCents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
-
       const metaObj = safeJsonParse(qaMetaStr, {});
       const thumbIsVideo = isLikelyMp4Url(qaThumb) || String(metaObj?.thumb_kind || "").toLowerCase() === "video";
-
       const insertRow = {
         universe_id: selectedUniverse.id,
         division: qaDivision,
@@ -10859,10 +10716,8 @@ export default function UniversesTab() {
         },
         updated_at: new Date().toISOString(),
       };
-
       const { error } = await supabase.from("universe_assets").insert([insertRow]);
       if (error) throw error;
-
       setNotice({ type: "ok", msg: "Universe item added." });
       resetQuickAdd();
       await loadUniverseAssets(selectedUniverse.id);
@@ -10886,7 +10741,6 @@ export default function UniversesTab() {
     resetQuickAdd,
     loadUniverseAssets,
   ]);
-
   const primeQuickAddForCharacter = useCallback(() => {
     setQaDivision("studios");
     setQaType("character");
@@ -10897,7 +10751,6 @@ export default function UniversesTab() {
     if (!qaTitle) setQaTitle("Character — Name");
     if (!qaDesc) setQaDesc("Bio / role / motivation / arc.");
   }, [qaMetaStr, qaTitle, qaDesc]);
-
   /** =========================
    * ✅ Local backfill tool
    * ========================= */
@@ -10909,28 +10762,23 @@ export default function UniversesTab() {
         .from("universe_assets")
         .select("id,external_url,thumbnail_url")
         .eq("universe_id", selectedUniverse.id);
-
       if (error) throw error;
-
       const toFix = (data || []).filter(
         (r) =>
           (!r.thumbnail_url || !String(r.thumbnail_url).trim()) &&
           r.external_url &&
           /\.(png|jpg|jpeg|webp|gif|mp4)$/i.test(String(r.external_url))
       );
-
       if (!toFix.length) {
         setNotice({ type: "ok", msg: "No thumbnails to backfill." });
         return;
       }
-
       for (const row of toFix) {
         await supabase
           .from("universe_assets")
           .update({ thumbnail_url: row.external_url, updated_at: new Date().toISOString() })
           .eq("id", row.id);
       }
-
       setNotice({ type: "ok", msg: `Backfilled ${toFix.length} thumbnails from external_url.` });
       await loadUniverseAssets(selectedUniverse.id);
     } catch (e) {
@@ -10938,7 +10786,6 @@ export default function UniversesTab() {
       setNotice({ type: "error", msg: e?.message || "Backfill failed" });
     }
   }, [selectedUniverse?.id, loadUniverseAssets]);
-
   /** =========================
    * Derived views
    * ========================= */
@@ -10946,12 +10793,10 @@ export default function UniversesTab() {
     () => assets.filter((a) => a.asset_type === "character" && (!a.thumbnail_url || !String(a.thumbnail_url).trim())).length,
     [assets]
   );
-
   const missingWorldMapTitleCount = useMemo(
     () => assets.filter((a) => a.asset_type === "world_map" && (!a.title || !String(a.title).trim())).length,
     [assets]
   );
-
   const universeStatusBadge = useMemo(() => {
     const s = String(selectedUniverse?.status || uStatus || "draft");
     const isPub = s === "published";
@@ -10965,12 +10810,10 @@ export default function UniversesTab() {
       </span>
     );
   }, [selectedUniverse?.status, uStatus]);
-
   const worldMapAssets = useMemo(
     () => assets.filter((a) => String(a.asset_type || "").toLowerCase() === "world_map"),
     [assets]
   );
-
   /** =========================
    * Render
    * ========================= */
@@ -10982,11 +10825,9 @@ export default function UniversesTab() {
           <p className="text-sm opacity-70">
             Create a universe, publish it, then curate items (world maps, characters, trailers, audio, decks) into the Studio page.
           </p>
-
           <div className="mt-2 flex items-center gap-2 flex-wrap text-[11px] opacity-70">
             <span>Storage bucket:</span>
             <code className="px-2 py-0.5 rounded border">{storageBucket || "NONE"}</code>
-
             {bucketReady && buckets.length > 0 && (
               <select
                 className="border rounded-xl p-1 text-[12px]"
@@ -11003,13 +10844,11 @@ export default function UniversesTab() {
                 ))}
               </select>
             )}
-
             {bucketReady && !storageBucket && (
               <span className="text-red-700">Create a bucket in Supabase → Storage (ex: assets) to enable uploads.</span>
             )}
           </div>
         </div>
-
         <button
           className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-50"
           onClick={() => {
@@ -11033,7 +10872,6 @@ export default function UniversesTab() {
           + New Universe
         </button>
       </div>
-
       {notice?.msg && (
         <div
           className={`rounded-xl border p-3 text-sm ${
@@ -11045,7 +10883,6 @@ export default function UniversesTab() {
           {notice.msg}
         </div>
       )}
-
       {/* Universe list + editor */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="rounded-2xl border border-gray-200 p-4">
@@ -11085,7 +10922,6 @@ export default function UniversesTab() {
             </div>
           )}
         </div>
-
         <div className="lg:col-span-2 rounded-2xl border border-gray-200 p-4">
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div className="font-semibold">{canEditUniverse ? "Edit Universe" : "Create Universe"}</div>
@@ -11103,7 +10939,6 @@ export default function UniversesTab() {
               )}
             </div>
           </div>
-
           {/* Warnings */}
           {canEditUniverse && (missingCharacterThumbCount > 0 || missingWorldMapTitleCount > 0) && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -11119,7 +10954,6 @@ export default function UniversesTab() {
               </div>
             </div>
           )}
-
           {!storageBucket && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
               <div className="font-semibold">Uploads disabled</div>
@@ -11129,7 +10963,6 @@ export default function UniversesTab() {
               </div>
             </div>
           )}
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label className="text-sm">
               Title
@@ -11144,27 +10977,22 @@ export default function UniversesTab() {
                 placeholder="Legacy of the Hidden Clans"
               />
             </label>
-
             <label className="text-sm">
               Slug
               <input className="mt-1 w-full border rounded-xl p-2" value={uSlug} onChange={(e) => setUSlug(slugify(e.target.value))} />
             </label>
-
             <label className="text-sm md:col-span-2">
               Tagline
               <input className="mt-1 w-full border rounded-xl p-2" value={uTagline} onChange={(e) => setUTagline(e.target.value)} />
             </label>
-
             <label className="text-sm md:col-span-2">
               Logline
               <input className="mt-1 w-full border rounded-xl p-2" value={uLogline} onChange={(e) => setULogline(e.target.value)} />
             </label>
-
             <label className="text-sm md:col-span-2">
               Synopsis
               <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[110px]" value={uSynopsis} onChange={(e) => setUSynopsis(e.target.value)} />
             </label>
-
             {/* Cover */}
             <label className="text-sm">
               Cover Image URL
@@ -11174,7 +11002,6 @@ export default function UniversesTab() {
                 {uCover ? <img src={uCover} alt="" className="h-16 w-16 rounded-xl object-cover border" /> : null}
               </div>
             </label>
-
             {/* Hero Video */}
             <label className="text-sm">
               Hero Video URL
@@ -11187,7 +11014,18 @@ export default function UniversesTab() {
               </div>
               <div className="text-[11px] opacity-60 mt-1">Uploads mp4 into Storage and saves to universes.hero_video_url.</div>
             </label>
-
+            {/* Trailer Video */}
+            <label className="text-sm">
+              Trailer Video URL
+              <input className="mt-1 w-full border rounded-xl p-2" value={uTrailerVideo} onChange={(e) => setUTrailerVideo(e.target.value)} />
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
+                <input type="file" accept="video/mp4" disabled={uploading || !storageBucket} onChange={(e) => uploadTrailerVideoFile(e.target.files?.[0])} />
+                {uTrailerVideo && isLikelyMp4Url(uTrailerVideo) ? (
+                  <video src={uTrailerVideo} className="h-16 w-24 rounded-xl object-cover border" muted playsInline loop autoPlay />
+                ) : null}
+              </div>
+              <div className="text-[11px] opacity-60 mt-1">Uploads mp4 into Storage and saves to universes.trailer_video_url.</div>
+            </label>
             {/* Featured World Map */}
             <label className="text-sm">
               World Map URL (featured)
@@ -11200,7 +11038,6 @@ export default function UniversesTab() {
                 This saves to <code>universes.world_map_url</code> and updates immediately once the universe exists.
               </div>
             </label>
-
             <label className="text-sm">
               Status
               <select className="mt-1 w-full border rounded-xl p-2" value={uStatus} onChange={(e) => setUStatus(e.target.value)}>
@@ -11212,25 +11049,22 @@ export default function UniversesTab() {
               </div>
             </label>
           </div>
-
           <div className="mt-4 flex gap-3 flex-wrap">
             <button
               onClick={() => saveUniverse()}
-              disabled={savingUniverse || !uTitle.trim()}
+              disabled={savingUniverse || uploading || !uTitle.trim()}
               className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50"
             >
-              {savingUniverse ? "Saving…" : "Save"}
+              {savingUniverse ? "Saving…" : uploading ? "Uploading…" : "Save"}
             </button>
-
             <button
               onClick={publishUniverse}
-              disabled={savingUniverse || !uTitle.trim()}
+              disabled={savingUniverse || uploading || !uTitle.trim()}
               className="px-4 py-2 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-900 disabled:opacity-50"
               title="Sets status=published and saves"
             >
               Publish
             </button>
-
             <button
               onClick={unpublishUniverse}
               disabled={savingUniverse || !canEditUniverse}
@@ -11239,7 +11073,6 @@ export default function UniversesTab() {
             >
               Unpublish
             </button>
-
             <button
               onClick={deleteUniverse}
               disabled={savingUniverse || !canEditUniverse}
@@ -11250,7 +11083,6 @@ export default function UniversesTab() {
           </div>
         </div>
       </div>
-
       {/* ✅ WORLD MAP CONTROL CENTER */}
       {selectedUniverse?.id && (
         <div className="rounded-2xl border border-gray-200 p-4">
@@ -11261,12 +11093,10 @@ export default function UniversesTab() {
                 Upload multiple world maps (gallery), set one as featured, and manage Region labels.
               </div>
             </div>
-
             <div className="flex items-center gap-2 flex-wrap">
               <input type="file" accept="image/*" multiple disabled={uploading || !storageBucket} onChange={(e) => uploadWorldMapGallery(e.target.files)} />
             </div>
           </div>
-
           <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Gallery */}
             <div className="rounded-2xl border border-gray-200 p-4">
@@ -11274,7 +11104,6 @@ export default function UniversesTab() {
               <div className="text-[12px] opacity-70 mt-1">
                 Stored in <code>universe_assets</code> as <code>asset_type=world_map</code>.
               </div>
-
               {worldMapAssets.length === 0 ? (
                 <div className="mt-3 text-sm opacity-70">No gallery maps yet. Upload above.</div>
               ) : (
@@ -11298,7 +11127,6 @@ export default function UniversesTab() {
                             </span>
                           ) : null}
                         </div>
-
                         {url ? (
                           <img src={url} alt="" className="mt-2 h-32 w-full object-cover rounded-xl border" />
                         ) : (
@@ -11306,7 +11134,6 @@ export default function UniversesTab() {
                             no image url
                           </div>
                         )}
-
                         <div className="mt-2 flex gap-2 flex-wrap">
                           <button
                             className="px-3 py-1.5 rounded-xl border border-gray-300 text-sm"
@@ -11325,7 +11152,6 @@ export default function UniversesTab() {
                           >
                             Set as Featured
                           </button>
-
                           <button className="px-3 py-1.5 rounded-xl border border-red-300 bg-red-50 text-red-900 text-sm" onClick={() => removeAsset(m.id)}>
                             Delete
                           </button>
@@ -11336,7 +11162,6 @@ export default function UniversesTab() {
                 </div>
               )}
             </div>
-
             {/* Regions */}
             <div className="rounded-2xl border border-gray-200 p-4">
               <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -11352,41 +11177,34 @@ export default function UniversesTab() {
                     )}
                   </div>
                 </div>
-
                 <button className="px-3 py-1.5 rounded-xl border border-gray-300 text-sm" onClick={resetRegionForm}>
                   Clear Form
                 </button>
               </div>
-
               {/* Add region */}
               <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <label className="text-sm md:col-span-2">
                   Region title
                   <input className="mt-1 w-full border rounded-xl p-2" value={rTitle} onChange={(e) => setRTitle(e.target.value)} placeholder="The Ember Coast" />
                 </label>
-
                 <label className="text-sm md:col-span-2">
                   Description
                   <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[60px]" value={rDesc} onChange={(e) => setRDesc(e.target.value)} placeholder="Climate, factions, lore..." />
                 </label>
-
                 <label className="text-sm">
                   Sort order
                   <input className="mt-1 w-full border rounded-xl p-2" value={String(rSort)} onChange={(e) => setRSort(e.target.value)} />
                 </label>
-
                 <label className="text-sm">
                   Metadata JSON (optional)
                   <input className="mt-1 w-full border rounded-xl p-2" value={rMeta} onChange={(e) => setRMeta(e.target.value)} placeholder='{"x":0.2,"y":0.7}' />
                 </label>
               </div>
-
               <div className="mt-3 flex gap-2">
                 <button className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50" onClick={addRegion} disabled={savingRegionId}>
                   {savingRegionId === "new" ? "Adding…" : "Add Region"}
                 </button>
               </div>
-
               {/* List regions */}
               <div className="mt-4">
                 {loadingRegions ? (
@@ -11418,10 +11236,8 @@ export default function UniversesTab() {
                               </button>
                             </div>
                           </div>
-
                           {r.description ? <div className="text-sm opacity-80 mt-1">{r.description}</div> : null}
                           <div className="text-[11px] opacity-60 mt-1">sort: {r.sort_order}</div>
-
                           <div className="mt-2 flex gap-2 flex-wrap">
                             <button
                               className="px-3 py-1.5 rounded-xl border border-gray-300 text-sm disabled:opacity-50"
@@ -11436,7 +11252,6 @@ export default function UniversesTab() {
                             >
                               Load into form
                             </button>
-
                             <button
                               className="px-3 py-1.5 rounded-xl border border-gray-300 text-sm disabled:opacity-50"
                               disabled={isSaving}
@@ -11451,7 +11266,6 @@ export default function UniversesTab() {
                             >
                               {isSaving ? "Updating…" : "Update from form"}
                             </button>
-
                             <button
                               className="px-3 py-1.5 rounded-xl border border-red-300 bg-red-50 text-red-900 text-sm disabled:opacity-50"
                               disabled={isSaving}
@@ -11470,7 +11284,6 @@ export default function UniversesTab() {
           </div>
         </div>
       )}
-
       {/* Studio Pages (kept intact) */}
       {selectedUniverse?.id && (
         <div className="rounded-2xl border border-gray-200 p-4">
@@ -11481,12 +11294,10 @@ export default function UniversesTab() {
                 Published pages render on <code>/studios/[slug]</code>.
               </div>
             </div>
-
             <button className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-50" onClick={resetPageEditor}>
               + New Page
             </button>
           </div>
-
           <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="rounded-2xl border border-gray-200 p-3">
               <div className="font-semibold mb-2">Pages</div>
@@ -11522,14 +11333,12 @@ export default function UniversesTab() {
                 </div>
               )}
             </div>
-
             <div className="lg:col-span-2 rounded-2xl border border-gray-200 p-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <label className="text-sm md:col-span-2">
                   Title
                   <input className="mt-1 w-full border rounded-xl p-2" value={pTitle} onChange={(e) => setPTitle(e.target.value)} />
                 </label>
-
                 <label className="text-sm">
                   Type
                   <select className="mt-1 w-full border rounded-xl p-2" value={pType} onChange={(e) => setPType(e.target.value)}>
@@ -11540,7 +11349,6 @@ export default function UniversesTab() {
                     ))}
                   </select>
                 </label>
-
                 <label className="text-sm">
                   Status
                   <select className="mt-1 w-full border rounded-xl p-2" value={pStatus} onChange={(e) => setPStatus(e.target.value)}>
@@ -11548,27 +11356,22 @@ export default function UniversesTab() {
                     <option value="published">published</option>
                   </select>
                 </label>
-
                 <label className="text-sm">
                   Sort
                   <input className="mt-1 w-full border rounded-xl p-2" value={String(pSort)} onChange={(e) => setPSort(e.target.value)} />
                 </label>
-
                 <label className="text-sm md:col-span-3">
                   Excerpt (optional)
                   <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[60px]" value={pExcerpt} onChange={(e) => setPExcerpt(e.target.value)} />
                 </label>
-
                 <label className="text-sm md:col-span-3">
                   Hero Image URL (optional)
                   <input className="mt-1 w-full border rounded-xl p-2" value={pHeroImg} onChange={(e) => setPHeroImg(e.target.value)} />
                 </label>
-
                 <label className="text-sm md:col-span-3">
                   Hero Video URL (optional)
                   <input className="mt-1 w-full border rounded-xl p-2" value={pHeroVid} onChange={(e) => setPHeroVid(e.target.value)} />
                 </label>
-
                 <label className="text-sm md:col-span-3">
                   Content (Markdown or plain text — paste)
                   <textarea
@@ -11578,25 +11381,21 @@ export default function UniversesTab() {
                   />
                 </label>
               </div>
-
               <div className="mt-4 flex gap-3">
                 <button className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50" onClick={savePage} disabled={!pTitle.trim() || savingPageId}>
                   {savingPageId ? "Saving…" : "Save Page"}
                 </button>
-
                 {pId ? (
                   <button className="px-4 py-2 rounded-xl border border-red-300 bg-red-50 text-red-900 disabled:opacity-50" onClick={deletePage} disabled={savingPageId}>
                     Delete Page
                   </button>
                 ) : null}
               </div>
-
               <div className="mt-3 text-[11px] opacity-60">Tip: set Status=published to show on the public Studio page.</div>
             </div>
           </div>
         </div>
       )}
-
       {/* ✅ NEW: Attach Media Tracks / Audio / Trailers from media.js (posts division=media) */}
       <div className="rounded-2xl border border-gray-200 p-4">
         <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -11606,7 +11405,6 @@ export default function UniversesTab() {
               Pull from <code>posts</code> where <code>division=media</code>. Adds to <code>universe_assets</code> so it renders on <code>/studios/[slug]</code>.
             </div>
           </div>
-
           <div className="flex gap-2 flex-wrap items-center">
             <select className="border rounded-xl p-2" value={mediaTypeFilter} onChange={(e) => setMediaTypeFilter(e.target.value)}>
               {MEDIA_TYPES.map((t) => (
@@ -11615,26 +11413,22 @@ export default function UniversesTab() {
                 </option>
               ))}
             </select>
-
             <input
               className="border rounded-xl p-2"
               value={mediaQuery}
               onChange={(e) => setMediaQuery(e.target.value)}
               placeholder="Search media title or slug…"
             />
-
             <button className="px-4 py-2 rounded-xl border border-gray-300" onClick={searchMediaPosts} disabled={mediaSearching || !selectedUniverse?.id}>
               {mediaSearching ? "Searching…" : "Search Media"}
             </button>
           </div>
         </div>
-
         {!selectedUniverse?.id && (
           <div className="mt-4 text-sm rounded-xl border border-amber-200 bg-amber-50 p-3">
             Create or select a universe first. Then you can attach media to it.
           </div>
         )}
-
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           {mediaResults.map((p) => {
             const already = assets.some((a) => {
@@ -11646,11 +11440,9 @@ export default function UniversesTab() {
               if (a.external_url && p?.slug && String(a.external_url) === `/media/${p.slug}`) return true;
               return false;
             });
-
             const playable = p._audio_url || (isAudioLikeUrl(p._media_url) ? p._media_url : "");
             const detailUrl = p.slug ? `/media/${p.slug}` : "";
             const thumb = p._thumb;
-
             return (
               <div key={p.id} className="rounded-2xl border border-gray-200 p-3">
                 <div className="flex items-start justify-between gap-2">
@@ -11667,20 +11459,30 @@ export default function UniversesTab() {
                     </span>
                   ) : null}
                 </div>
-
                 {thumb ? <img src={thumb} alt="" className="mt-3 h-28 w-full object-cover rounded-xl" /> : null}
-
                 <div className="mt-3 space-y-2">
                   {playable ? (
                     <audio controls className="w-full">
-                      <source src={playable} />
+                      <source
+                        src={playable}
+                        type={
+                          /\.mp3(\?|$)/i.test(playable)
+                            ? "audio/mpeg"
+                            : /\.wav(\?|$)/i.test(playable)
+                            ? "audio/wav"
+                            : /\.ogg(\?|$)/i.test(playable)
+                            ? "audio/ogg"
+                            : /\.m4a(\?|$)/i.test(playable)
+                            ? "audio/mp4"
+                            : undefined
+                        }
+                      />
                     </audio>
                   ) : (
                     <div className="text-xs opacity-70">
                       No direct audio URL found in metadata. (That’s okay — Studio can still link to the Media page.)
                     </div>
                   )}
-
                   <div className="flex gap-2 flex-wrap">
                     {detailUrl ? (
                       <a className="text-sm underline" href={detailUrl} target="_blank" rel="noreferrer">
@@ -11693,7 +11495,6 @@ export default function UniversesTab() {
                       </a>
                     ) : null}
                   </div>
-
                   <button
                     className="w-full px-3 py-2 rounded-xl bg-black text-white disabled:opacity-50"
                     onClick={() => addMediaPostToUniverse(p)}
@@ -11706,7 +11507,6 @@ export default function UniversesTab() {
             );
           })}
         </div>
-
         {selectedUniverse?.id && mediaResults.length === 0 && (
           <div className="mt-4 text-sm opacity-70">
             No media results. If you know you have items, confirm your <code>posts</code> table has <code>division='media'</code> and fields
@@ -11714,7 +11514,6 @@ export default function UniversesTab() {
           </div>
         )}
       </div>
-
       {/* Quick add custom item (manual link) */}
       <div className="rounded-2xl border border-gray-200 p-4">
         <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -11722,14 +11521,12 @@ export default function UniversesTab() {
             <div className="font-semibold">Add Universe Item (Manual Link)</div>
             <div className="text-sm opacity-70">Perfect for Characters + Trailers + Decks. Thumbnail uploads now save reliably.</div>
           </div>
-
           <div className="flex gap-2 flex-wrap">
             <button className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-50" onClick={primeQuickAddForCharacter} disabled={!selectedUniverse?.id}>
               + Character Mode
             </button>
           </div>
         </div>
-
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           <label className="text-sm">
             Division
@@ -11743,7 +11540,6 @@ export default function UniversesTab() {
               <option value="realty">realty</option>
             </select>
           </label>
-
           <label className="text-sm">
             Asset Type
             <select className="mt-1 w-full border rounded-xl p-2" value={qaType} onChange={(e) => setQaType(e.target.value)}>
@@ -11768,7 +11564,6 @@ export default function UniversesTab() {
               <option value="mp4">mp4</option>
             </select>
           </label>
-
           <label className="text-sm">
             Status
             <select className="mt-1 w-full border rounded-xl p-2" value={qaStatus} onChange={(e) => setQaStatus(e.target.value)}>
@@ -11776,12 +11571,10 @@ export default function UniversesTab() {
               <option value="draft">draft</option>
             </select>
           </label>
-
           <label className="text-sm md:col-span-2">
             Title
             <input className="mt-1 w-full border rounded-xl p-2" value={qaTitle} onChange={(e) => setQaTitle(e.target.value)} placeholder="Kael — Last Heir" />
           </label>
-
           <label className="text-sm">
             Public?
             <select className="mt-1 w-full border rounded-xl p-2" value={qaPublic ? "yes" : "no"} onChange={(e) => setQaPublic(e.target.value === "yes")}>
@@ -11789,13 +11582,11 @@ export default function UniversesTab() {
               <option value="no">no (premium)</option>
             </select>
           </label>
-
           <label className="text-sm md:col-span-2">
             External URL (YouTube/Spotify/MP3/PDF/etc)
             <input className="mt-1 w-full border rounded-xl p-2" value={qaUrl} onChange={(e) => setQaUrl(e.target.value)} placeholder="https://..." />
             <div className="text-[11px] opacity-60 mt-1">Tip: for songs, use a direct mp3/wav URL for instant audio playback on Studio pages.</div>
           </label>
-
           <label className="text-sm">
             Thumbnail URL
             <input className="mt-1 w-full border rounded-xl p-2" value={qaThumb} onChange={(e) => setQaThumb(e.target.value)} placeholder="https://... OR upload below" />
@@ -11810,23 +11601,19 @@ export default function UniversesTab() {
               ) : null}
             </div>
           </label>
-
           <label className="text-sm">
             Price (USD, premium only)
             <input className="mt-1 w-full border rounded-xl p-2" value={qaPrice} onChange={(e) => setQaPrice(e.target.value)} placeholder="49.00" disabled={qaPublic} />
           </label>
-
           <label className="text-sm md:col-span-3">
             Description
             <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[80px]" value={qaDesc} onChange={(e) => setQaDesc(e.target.value)} />
           </label>
-
           <label className="text-sm md:col-span-3">
             Metadata JSON (optional)
             <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[70px]" value={qaMetaStr} onChange={(e) => setQaMetaStr(e.target.value)} />
           </label>
         </div>
-
         <div className="mt-4 flex gap-3">
           <button className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50" disabled={!selectedUniverse?.id} onClick={addCustomAsset}>
             Add Item
@@ -11836,7 +11623,6 @@ export default function UniversesTab() {
           </button>
         </div>
       </div>
-
       {/* Curate products into universe (existing) */}
       <div className="rounded-2xl border border-gray-200 p-4">
         <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -11844,7 +11630,6 @@ export default function UniversesTab() {
             <div className="font-semibold">Attach Products (from products table)</div>
             <div className="text-sm opacity-70">Search products and add them as universe items.</div>
           </div>
-
           <div className="flex gap-2 flex-wrap">
             <select className="border rounded-xl p-2" value={division} onChange={(e) => setDivision(e.target.value)}>
               <option value="publishing">publishing</option>
@@ -11852,21 +11637,17 @@ export default function UniversesTab() {
               <option value="capital">capital</option>
               <option value="realty">realty</option>
             </select>
-
             <input className="border rounded-xl p-2" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or slug…" />
-
             <button className="px-4 py-2 rounded-xl border border-gray-300" onClick={searchProducts} disabled={searching}>
               {searching ? "Searching…" : "Search"}
             </button>
           </div>
         </div>
-
         {!selectedUniverse?.id && (
           <div className="mt-4 text-sm rounded-xl border border-amber-200 bg-amber-50 p-3">
             Create or select a universe first. Then you can attach products to it.
           </div>
         )}
-
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           {productResults.map((p) => {
             const exists = assets.some((a) => a.source_type === "product" && a.source_product_id === p.id);
@@ -11887,7 +11668,6 @@ export default function UniversesTab() {
           })}
         </div>
       </div>
-
       {/* Current universe items (FULL CRUD) */}
       {selectedUniverse?.id && (
         <div className="rounded-2xl border border-gray-200 p-4">
@@ -11897,7 +11677,6 @@ export default function UniversesTab() {
               Tip: for songs, ensure metadata has <code>audio_url</code> (mp3/wav) so Studio can play instantly.
             </div>
           </div>
-
           {assets.length === 0 ? (
             <div className="opacity-70 text-sm">Nothing attached yet.</div>
           ) : (
@@ -11907,7 +11686,6 @@ export default function UniversesTab() {
                 const isPublic = Boolean(getAssetVal(a, "is_public", a.is_public));
                 const priceCents = clampInt(getAssetVal(a, "price_cents", a.price_cents || 0), a.price_cents || 0);
                 const status = String(getAssetVal(a, "status", a.status || "published") || "published");
-
                 const thumb = getAssetVal(a, "thumbnail_url", a.thumbnail_url || "");
                 const title = getAssetVal(a, "title", a.title || "");
                 const desc = getAssetVal(a, "description", a.description || "");
@@ -11915,14 +11693,11 @@ export default function UniversesTab() {
                 const divisionVal = getAssetVal(a, "division", a.division || "");
                 const typeVal = getAssetVal(a, "asset_type", a.asset_type || "");
                 const sortOrderVal = getAssetVal(a, "sort_order", a.sort_order ?? idx * 10);
-
                 const metaStr = getAssetMetaStr(a);
                 const metaObj = safeJsonParse(metaStr, a.metadata || {});
                 const thumbIsVideo =
                   isLikelyMp4Url(thumb) || String(metaObj?.thumb_kind || "").toLowerCase() === "video";
-
                 const hasAudio = isAudioLikeUrl(exUrl) || isAudioLikeUrl(metaObj?.audio_url || "");
-
                 return (
                   <div key={a.id} className="rounded-2xl border border-gray-200 p-4">
                     <div className="flex items-start gap-3">
@@ -11937,7 +11712,6 @@ export default function UniversesTab() {
                           "no thumb"
                         )}
                       </div>
-
                       <div className="flex-1 min-w-0">
                         <div className="text-[11px] opacity-70 uppercase tracking-[0.22em]">
                           {String(a.division || "").toUpperCase()} • {String(a.asset_type || "").toUpperCase()}
@@ -11950,7 +11724,6 @@ export default function UniversesTab() {
                           </div>
                         )}
                       </div>
-
                       <div className="flex gap-2">
                         <button
                           className="px-3 py-1 rounded-xl border text-sm disabled:opacity-50"
@@ -11968,13 +11741,11 @@ export default function UniversesTab() {
                         </button>
                       </div>
                     </div>
-
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                       <label className="text-sm">
                         Title
                         <input className="mt-1 w-full border rounded-xl p-2" value={title} onChange={(e) => setAssetField(a.id, { title: e.target.value })} />
                       </label>
-
                       <label className="text-sm">
                         Sort Order
                         <input
@@ -11983,12 +11754,10 @@ export default function UniversesTab() {
                           onChange={(e) => setAssetField(a.id, { sort_order: e.target.value })}
                         />
                       </label>
-
                       <label className="text-sm">
                         Division
                         <input className="mt-1 w-full border rounded-xl p-2" value={divisionVal} onChange={(e) => setAssetField(a.id, { division: e.target.value })} />
                       </label>
-
                       <label className="text-sm">
                         Asset Type
                         <input className="mt-1 w-full border rounded-xl p-2" value={typeVal} onChange={(e) => setAssetField(a.id, { asset_type: e.target.value })} />
@@ -11996,12 +11765,10 @@ export default function UniversesTab() {
                           For songs: <code>soundtrack</code> or <code>score</code>. For reads: <code>chapter_read</code>. For video: <code>trailer</code>.
                         </div>
                       </label>
-
                       <label className="text-sm md:col-span-2">
                         Description
                         <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[70px]" value={desc} onChange={(e) => setAssetField(a.id, { description: e.target.value })} />
                       </label>
-
                       <label className="text-sm md:col-span-2">
                         External URL
                         <input className="mt-1 w-full border rounded-xl p-2" value={exUrl} onChange={(e) => setAssetField(a.id, { external_url: e.target.value })} />
@@ -12009,7 +11776,6 @@ export default function UniversesTab() {
                           For audio playback on Studio pages, make this a direct <code>.mp3</code>/<code>.wav</code> or store <code>metadata.audio_url</code>.
                         </div>
                       </label>
-
                       <label className="text-sm md:col-span-2">
                         Thumbnail URL
                         <input className="mt-1 w-full border rounded-xl p-2" value={thumb} onChange={(e) => setAssetField(a.id, { thumbnail_url: e.target.value })} />
@@ -12029,7 +11795,6 @@ export default function UniversesTab() {
                           ) : null}
                         </div>
                       </label>
-
                       <label className="text-sm">
                         Status
                         <select className="mt-1 w-full border rounded-xl p-2" value={status} onChange={(e) => setAssetField(a.id, { status: e.target.value })}>
@@ -12037,7 +11802,6 @@ export default function UniversesTab() {
                           <option value="draft">draft</option>
                         </select>
                       </label>
-
                       <label className="text-sm">
                         Public / Premium
                         <select
@@ -12052,7 +11816,6 @@ export default function UniversesTab() {
                           <option value="premium">premium (gated)</option>
                         </select>
                       </label>
-
                       <label className="text-sm md:col-span-2">
                         Price (cents, premium only)
                         <input
@@ -12063,7 +11826,6 @@ export default function UniversesTab() {
                         />
                         <div className="text-[11px] opacity-60 mt-1">Display: ${toMoney(priceCents)}</div>
                       </label>
-
                       <label className="text-sm md:col-span-2">
                         Metadata JSON
                         <textarea className="mt-1 w-full border rounded-xl p-2 min-h-[70px]" value={metaStr} onChange={(e) => setAssetField(a.id, { metadataStr: e.target.value })} />
@@ -12072,7 +11834,6 @@ export default function UniversesTab() {
                         </div>
                       </label>
                     </div>
-
                     <div className="mt-4 flex gap-3 items-center">
                       {exUrl ? (
                         <a className="text-sm underline" href={exUrl} target="_blank" rel="noreferrer">
@@ -12081,11 +11842,9 @@ export default function UniversesTab() {
                       ) : (
                         <span className="text-sm opacity-60">No link</span>
                       )}
-
                       <button className="ml-auto px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50" disabled={isSaving} onClick={() => saveAsset(a)}>
                         {isSaving ? "Saving…" : "Save Item"}
                       </button>
-
                       <button className="px-4 py-2 rounded-xl border border-red-300 bg-red-50 text-red-900" onClick={() => removeAsset(a.id)} disabled={isSaving}>
                         Remove
                       </button>
@@ -14565,6 +14324,334 @@ export const store = configureStore({
 });
 
 
+===== FILE: lib/studio/build-packet.js  (size=5011 bytes) =====
+import archiver from "archiver";
+import { PassThrough } from "stream";
+import { finished } from "stream/promises";
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
+import { buildPagePdf } from "./build-pdf";
+
+/**
+ * buildPacketZip({ pages, tier, mode })
+ * pages = array of studio_pages rows
+ *
+ * ✅ FIX: resolve zip correctly (wait for readable "end")
+ * ✅ FIX: stable serverless chromium launch
+ * ✅ FIX: safer archiver drain + error handling
+ *
+ * ✅ NEW FIX (empty buffer):
+ * - DO NOT silently skip invalid PDFs
+ * - Coerce pdf output to Buffer (Buffer | Uint8Array | ArrayBuffer | string)
+ * - Throw with exact page filename + root error if PDF build fails
+ * - Throw if zero PDFs were added (prevents empty ~22 byte zip)
+ */
+
+const isProd = process.env.NODE_ENV === "production";
+
+function safeStr(v) {
+  return String(v ?? "").trim();
+}
+
+function slugify(s) {
+  return (
+    safeStr(s)
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "page"
+  );
+}
+
+async function resolveExecutablePath() {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
+  try {
+    const p = await chromium.executablePath();
+    if (p) return p;
+  } catch {}
+  return undefined;
+}
+
+// ✅ Coerce buildPagePdf return type into a Buffer (supports multiple return shapes safely)
+function coerceToBuffer(pdfRaw) {
+  if (!pdfRaw) return null;
+  if (Buffer.isBuffer(pdfRaw)) return pdfRaw;
+  if (pdfRaw instanceof Uint8Array) return Buffer.from(pdfRaw);
+  if (pdfRaw instanceof ArrayBuffer) return Buffer.from(new Uint8Array(pdfRaw));
+  if (typeof pdfRaw === "string") return Buffer.from(pdfRaw);
+  return null;
+}
+
+export async function buildPacketZip({ pages = [], tier = "producer", mode = "full" } = {}) {
+  const archive = archiver("zip", { zlib: { level: 9 } });
+
+  // PassThrough is BOTH writable and readable; we read from it to collect bytes
+  const stream = new PassThrough();
+  const chunks = [];
+
+  // Collect output
+  stream.on("data", (d) => chunks.push(d));
+
+  // Pipe archive -> stream
+  archive.pipe(stream);
+
+  // Warnings should not crash
+  archive.on("warning", (err) => {
+    console.warn("zip warning:", err?.message || err);
+  });
+
+  // Hard errors must reject
+  const errorPromise = new Promise((_, reject) => {
+    archive.on("error", reject);
+    stream.on("error", reject);
+  });
+
+  // ✅ IMPORTANT: Wait until the readable side ENDS (not "finish")
+  // finished(stream) resolves on 'end'/'close' for readable streams.
+  const drainPromise = finished(stream);
+
+  const executablePath = await resolveExecutablePath();
+
+  if (!isProd && !executablePath && !process.env.PUPPETEER_EXECUTABLE_PATH) {
+    throw new Error(
+      "Local PDF build requires Chrome. Set PUPPETEER_EXECUTABLE_PATH to your Chrome/Chromium executable."
+    );
+  }
+
+  const browser = await puppeteer.launch({
+    args: chromium.args,
+    executablePath,
+    headless: isProd ? chromium.headless : true,
+    defaultViewport: chromium.defaultViewport, // ✅ important on serverless
+    ignoreHTTPSErrors: true,
+  });
+
+  let added = 0;
+
+  try {
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+
+      const pageType = slugify(page?.page_type || `page-${i + 1}`);
+      const titlePart = slugify(page?.title || "");
+      const name = `${String(i + 1).padStart(2, "0")}-${pageType}${titlePart ? `-${titlePart}` : ""}.pdf`;
+
+      const watermark = mode === "preview" ? "PREVIEW — MANYAGI STUDIOS" : "CONFIDENTIAL — MANYAGI STUDIOS";
+
+      let pdfRaw;
+      try {
+        // buildPagePdf should return something convertible to Buffer
+        pdfRaw = await buildPagePdf(page, {
+          watermark,
+          browser,
+          fast: true,
+        });
+      } catch (e) {
+        // ✅ DO NOT silently skip — throw exact failing page name so you know what broke
+        throw new Error(`buildPagePdf failed for "${name}": ${e?.message || e}`);
+      }
+
+      const pdf = coerceToBuffer(pdfRaw);
+
+      // ✅ If empty/invalid, fail loudly (this is what was producing "empty buffer")
+      if (!pdf || pdf.length < 100) {
+        throw new Error(`buildPagePdf returned empty/invalid PDF for "${name}" (bytes=${pdf?.length ?? 0})`);
+      }
+
+      archive.append(pdf, { name });
+      added++;
+    }
+
+    // Finalize zip creation
+    archive.finalize();
+
+    // ✅ Wait for either an error or full drain
+    await Promise.race([Promise.all([drainPromise]), errorPromise]);
+
+    const out = Buffer.concat(chunks);
+
+    // ✅ If we added nothing, this prevents "empty zip" situations from passing through
+    if (added === 0) {
+      throw new Error("No PDFs were added to the zip (all PDF builds failed).");
+    }
+
+    return out;
+  } finally {
+    try {
+      await browser.close();
+    } catch {}
+  }
+}
+
+
+===== FILE: lib/studio/build-pdf.js  (size=4554 bytes) =====
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
+import { marked } from "marked";
+
+/**
+ * buildPagePdf(page, { watermark, html, browser, fast })
+ *
+ * ✅ Backward compatible:
+ * - If options.browser is NOT provided: launches + closes its own browser (original behavior)
+ * - If options.browser IS provided: reuses it (used by build-packet.js for perf)
+ *
+ * ✅ Fix: prevent packet hangs
+ * - default waitUntil: "domcontentloaded" (networkidle0 can hang)
+ * - optional fast mode blocks images/fonts/media
+ * - adds hard timeouts so a page can’t stall the packet
+ */
+
+const isProd = process.env.NODE_ENV === "production";
+
+function safeStr(v) {
+  return String(v ?? "").trim();
+}
+
+function safeJson(v, fallback = {}) {
+  try {
+    if (!v) return fallback;
+    if (typeof v === "object") return v;
+    const parsed = JSON.parse(String(v));
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function getStudioBodyHtml(page) {
+  const md = safeJson(page?.metadata, {});
+
+  const raw =
+    safeStr(page?.content_html) ||
+    safeStr(page?.html) ||
+    safeStr(page?.content_md) ||
+    safeStr(md?.content || md?.body || md?.markdown) ||
+    safeStr(page?.content) ||
+    "";
+
+  const looksLikeHtml =
+    raw.includes("<p") ||
+    raw.includes("<div") ||
+    raw.includes("<h1") ||
+    raw.includes("<h2") ||
+    raw.includes("<br") ||
+    raw.includes("<ul") ||
+    raw.includes("<ol") ||
+    raw.includes("<li");
+
+  return looksLikeHtml ? raw : marked.parse(raw);
+}
+
+function buildHtmlFromStudioPage(page, watermark = "") {
+  const title = safeStr(page?.title || page?.page_type || "Studio Page");
+  const bodyHtml = getStudioBodyHtml(page);
+  const wm = safeStr(watermark);
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>${title}</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 32px; }
+      .watermark {
+        position: fixed;
+        bottom: 18px;
+        right: 24px;
+        opacity: 0.15;
+        font-size: 12px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        pointer-events: none;
+      }
+      h1 { margin: 0 0 16px; font-size: 24px; }
+      p { line-height: 1.6; margin: 0 0 10px; }
+      ul { margin: 10px 0 10px 20px; }
+      ol { margin: 10px 0 10px 20px; }
+      li { margin: 6px 0; }
+      pre { white-space: pre-wrap; }
+      code { white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>${title}</h1>
+    <div>${bodyHtml}</div>
+    ${wm ? `<div class="watermark">${wm}</div>` : ""}
+  </body>
+</html>`;
+}
+
+async function resolveExecutablePath() {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
+
+  try {
+    const p = await chromium.executablePath();
+    if (p) return p;
+  } catch {
+    // ignore
+  }
+
+  return undefined;
+}
+
+export async function buildPagePdf(page, options = {}) {
+  const watermark = safeStr(options?.watermark || "");
+  const html = options?.html || buildHtmlFromStudioPage(page, watermark);
+
+  const externalBrowser = options?.browser || null;
+  const fast = !!options?.fast;
+
+  let browser = externalBrowser;
+  let ownsBrowser = false;
+
+  if (!browser) {
+    const executablePath = await resolveExecutablePath();
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      executablePath,
+      headless: isProd ? chromium.headless : true,
+    });
+    ownsBrowser = true;
+  }
+
+  try {
+    const p = await browser.newPage();
+
+    // ✅ prevents “pending forever”
+    p.setDefaultTimeout(20000);
+    p.setDefaultNavigationTimeout(20000);
+
+    if (fast) {
+      await p.setRequestInterception(true);
+      p.on("request", (req) => {
+        const rt = req.resourceType();
+        if (rt === "image" || rt === "font" || rt === "media") return req.abort();
+        return req.continue();
+      });
+    }
+
+    await p.setViewport({ width: 1200, height: 800, deviceScaleFactor: 1 });
+
+    // ✅ critical fix: avoid networkidle0 hangs
+    await p.setContent(html, { waitUntil: "domcontentloaded" });
+
+    const pdfBuffer = await p.pdf({
+      format: "Letter",
+      printBackground: true,
+      margin: { top: "20mm", right: "15mm", bottom: "20mm", left: "15mm" },
+    });
+
+    await p.close();
+    return pdfBuffer;
+  } finally {
+    if (ownsBrowser && browser) {
+      await browser.close();
+    }
+  }
+}
+
+
 ===== FILE: lib/supabase.js  (size=316 bytes) =====
 import { createClient } from '@supabase/supabase-js';
 
@@ -14774,7 +14861,7 @@ const nextConfig = withTM({
 module.exports = withMDX(nextConfig);
 
 
-===== FILE: package.json  (size=1525 bytes) =====
+===== FILE: package.json  (size=1678 bytes) =====
 {
   "name": "manyagi-site",
   "version": "1.0.0",
@@ -14792,16 +14879,19 @@ module.exports = withMDX(nextConfig);
     "@netlify/plugin-nextjs": "^5.13.3",
     "@next/mdx": "^14.2.5",
     "@reduxjs/toolkit": "^2.2.8",
+    "@sparticuz/chromium": "^143.0.0",
     "@stripe/react-stripe-js": "^2.7.3",
     "@stripe/stripe-js": "^4.10.0",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/supabase-js": "^2.45.4",
+    "archiver": "^7.0.1",
     "axios": "^1.12.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^11.11.9",
     "gray-matter": "^4.0.3",
     "gsap": "^3.12.5",
+    "marked": "^17.0.1",
     "micro": "^10.0.1",
     "next": "^14.2.15",
     "next-mdx-remote": "^4.4.1",
@@ -14812,6 +14902,8 @@ module.exports = withMDX(nextConfig);
     "node-ical": "^0.22.0",
     "nodemailer": "^7.0.10",
     "posthog-js": "^1.268.8",
+    "puppeteer": "^24.34.0",
+    "puppeteer-core": "^24.34.0",
     "react": "^18.3.1",
     "react-big-calendar": "^1.19.4",
     "react-dom": "^18.3.1",
@@ -19873,6 +19965,573 @@ export default async function handler(req, res) {
 }
 
 
+===== FILE: pages/api/studio/download-packet.js  (size=10133 bytes) =====
+// pages/api/studio/download-packet.js
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { buildPacketZip } from "@/lib/studio/build-packet";
+
+// ✅ Prevent Next.js from limiting responses / buffering weirdness
+export const config = {
+  api: {
+    bodyParser: { sizeLimit: "4mb" }, // request body size (small)
+    responseLimit: false, // ✅ allow large JSON/headers; zip is uploaded to storage anyway
+  },
+};
+
+/* ------------------------------
+   Shared tier helpers (safe)
+--------------------------------*/
+const ACCESS_TIERS = ["public", "priority", "producer", "packaging"];
+const TIER_RANK = { public: 0, priority: 1, producer: 2, packaging: 3 };
+
+function safeStr(v) {
+  return String(v ?? "").trim();
+}
+
+function safeJson(v, fallback = {}) {
+  try {
+    if (!v) return fallback;
+    if (typeof v === "object") return v;
+    const parsed = JSON.parse(String(v));
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeTier(t) {
+  const v = safeStr(t).toLowerCase();
+  return ACCESS_TIERS.includes(v) ? v : "public";
+}
+
+function canAccess(viewerTier, requiredTier) {
+  return (TIER_RANK[normalizeTier(viewerTier)] ?? 0) >= (TIER_RANK[normalizeTier(requiredTier)] ?? 0);
+}
+
+// ✅ NEW: cap a tier by another tier (effective = min(viewer, packet))
+function capTierBy(viewerTier, packetTier) {
+  const v = normalizeTier(viewerTier);
+  const p = normalizeTier(packetTier);
+  return (TIER_RANK[v] ?? 0) <= (TIER_RANK[p] ?? 0) ? v : p;
+}
+
+function getClientIp(req) {
+  const xf = req.headers["x-forwarded-for"];
+  if (typeof xf === "string" && xf.length) return xf.split(",")[0].trim();
+  if (Array.isArray(xf) && xf.length) return String(xf[0]).trim();
+  return req.socket?.remoteAddress || null;
+}
+
+/* ------------------------------
+   ✅ NEW: Page tier logic (matches studios/[slug].js)
+--------------------------------*/
+const PAGE_TYPE_DEFAULT_TIER = {
+  logline: "public",
+  pitch_1p: "public",
+  synopsis_1page: "public",
+  comparable_titles: "public",
+  format_rating_audience: "public",
+  one_sheet: "public",
+  beat_sheet: "priority",
+  season1_outline: "priority",
+  episode_list: "priority",
+  pilot_outline: "priority",
+  signature_scene_clip: "priority",
+  teaser_trailer: "priority",
+  themes_main_hero_villain: "priority",
+  trailer_cue_stingers: "priority",
+  series_bible: "producer",
+  world_rules_factions: "producer",
+  timeline: "producer",
+  glossary: "producer",
+  cast_profiles_arcs: "producer",
+  lookbook_pdf: "producer",
+  poster_key_art: "producer",
+  trailer_storyboard: "producer",
+  franchise_roadmap: "producer",
+  pilot_script_or_treatment: "producer",
+  chain_of_title_rights_matrix: "packaging",
+  option_term_sheet_producer_packet: "packaging",
+  negotiation: "packaging",
+};
+
+function getPageVisibility(p) {
+  const md = safeJson(p?.metadata, {});
+  const v = String(md?.visibility || "public").toLowerCase();
+  return v === "vault" ? "vault" : "public";
+}
+
+function getPageAccessTier(p) {
+  const md = safeJson(p?.metadata, {});
+  // if explicit access_tier exists, honor it
+  if (md?.access_tier) return normalizeTier(md.access_tier);
+
+  // vault pages default to packaging (same as UI)
+  if (getPageVisibility(p) === "vault") return "packaging";
+
+  // otherwise default by page_type
+  const t = safeStr(p?.page_type);
+  return normalizeTier(PAGE_TYPE_DEFAULT_TIER[t] || "public");
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).end();
+
+  // ✅ Hard timeout to avoid “infinite hang”
+  const HARD_TIMEOUT_MS = 55_000;
+  let timeoutFired = false;
+
+  const hardTimeout = setTimeout(() => {
+    timeoutFired = true;
+    try {
+      console.error("download-packet hard timeout fired");
+      if (!res.headersSent) res.status(504).json({ error: "Packet build timed out" });
+    } catch {}
+  }, HARD_TIMEOUT_MS);
+
+  async function logPacketAttempt({
+    user_id,
+    universe_id,
+    viewer_tier = "public",
+    required_tier = "public",
+    is_locked = false,
+    file_path = null,
+    file_size_bytes = null,
+    packet_tier = "producer",
+    download_kind = "packet_zip",
+  }) {
+    const ip = getClientIp(req);
+    const user_agent = safeStr(req.headers["user-agent"] || "") || null;
+    const share_token = `packet:${normalizeTier(packet_tier)}`;
+
+    try {
+      await supabaseAdmin.from("studio_download_logs").insert({
+        universe_id,
+        user_id: user_id || null,
+        download_kind,
+        page_id: null,
+        viewer_tier: normalizeTier(viewer_tier),
+        required_tier: normalizeTier(required_tier),
+        is_locked: !!is_locked,
+        share_token,
+        file_path,
+        file_size_bytes,
+        ip,
+        user_agent,
+      });
+    } catch (e) {
+      console.warn("studio_download_logs insert failed:", e?.message || e);
+    }
+  }
+
+  try {
+    // 1) Auth
+    const token = (req.headers.authorization || "").replace("Bearer ", "");
+    if (!token) return res.status(401).json({ error: "Missing auth token" });
+
+    const { data: auth, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    const user = auth?.user;
+    if (authErr || !user) return res.status(401).json({ error: "Unauthorized" });
+
+    const { universe_id, tier = "producer", mode = "full", include_vault = false } = req.body || {};
+    if (!universe_id) return res.status(400).json({ error: "Missing universe_id" });
+
+    const packetTier = normalizeTier(tier);
+
+    // 2) Entitlement
+    const { data: ent } = await supabaseAdmin
+      .from("studio_entitlements")
+      .select("tier,status,expires_at,updated_at")
+      .eq("user_id", user.id)
+      .eq("universe_id", universe_id)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const now = new Date();
+    const active = ent && ent.status === "active" && (!ent.expires_at || new Date(ent.expires_at) > now);
+    const viewerTier = active ? normalizeTier(ent.tier) : "public";
+
+    if (!active || !canAccess(viewerTier, packetTier)) {
+      await logPacketAttempt({
+        user_id: user.id,
+        universe_id,
+        viewer_tier: viewerTier,
+        required_tier: packetTier,
+        is_locked: true,
+        packet_tier: packetTier,
+      });
+      return res.status(403).json({ error: "No access to this packet" });
+    }
+
+    // ✅ NEW: Effective tier for THIS packet (prevents higher-tier users from getting extra pages in lower-tier packet)
+    const effectiveTier = capTierBy(viewerTier, packetTier);
+
+    // 3) Load pages
+    const { data: pages, error: pagesErr } = await supabaseAdmin
+      .from("studio_pages")
+      .select("*")
+      .eq("universe_id", universe_id)
+      .eq("status", "published");
+
+    if (pagesErr) throw pagesErr;
+
+    const list = pages || [];
+
+    // 4) Filter by tier + vault rules (matches UI logic)
+    const allowVault = !!include_vault && canAccess(effectiveTier, "packaging");
+
+    const allowedPages = list
+      .filter((p) => {
+        // vault visibility gate
+        const vis = getPageVisibility(p);
+        if (vis === "vault" && !allowVault) return false;
+
+        // tier gate (IMPORTANT: uses UI default logic)
+        const requiredTier = getPageAccessTier(p);
+        return canAccess(effectiveTier, requiredTier);
+      })
+      // stable order (prefer DB sort_order if present)
+      .sort((a, b) => {
+        const ao = Number(a?.sort_order ?? 9999);
+        const bo = Number(b?.sort_order ?? 9999);
+        if (ao !== bo) return ao - bo;
+
+        const ad = new Date(a?.updated_at || 0).getTime();
+        const bd = new Date(b?.updated_at || 0).getTime();
+        if (bd !== ad) return bd - ad;
+
+        return safeStr(a?.title).localeCompare(safeStr(b?.title));
+      });
+
+    if (!allowedPages.length) return res.status(404).json({ error: "No pages available" });
+
+    console.log("packet: building zip", {
+      universe_id,
+      allowedPages: allowedPages.length,
+      packetTier,
+      viewerTier,
+      effectiveTier,
+      mode,
+      allowVault,
+    });
+
+    // 5) Build ZIP
+    const zipBuffer = await buildPacketZip({
+      pages: allowedPages,
+      tier: packetTier,
+      mode,
+    });
+
+    if (!zipBuffer || zipBuffer.length < 50) {
+      throw new Error("ZIP build failed (empty buffer)");
+    }
+
+    console.log("packet: zip built", { bytes: zipBuffer.length });
+
+    // 6) Upload
+    const path = `studios/${universe_id}/packets/${mode}/${packetTier}${allowVault ? ".vault" : ""}.zip`;
+
+    const { error: uploadErr } = await supabaseAdmin.storage.from("studio").upload(path, zipBuffer, {
+      contentType: "application/zip",
+      upsert: true,
+    });
+
+    if (uploadErr) throw uploadErr;
+
+    // 7) Signed URL
+    const { data: signed, error: signErr } = await supabaseAdmin.storage.from("studio").createSignedUrl(path, 60 * 10);
+
+    if (signErr) throw signErr;
+
+    // 8) Log success
+    await logPacketAttempt({
+      user_id: user.id,
+      universe_id,
+      viewer_tier: viewerTier,
+      required_tier: packetTier,
+      is_locked: false,
+      file_path: path,
+      file_size_bytes: zipBuffer.length,
+      packet_tier: packetTier,
+      download_kind: "packet_zip",
+    });
+
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json({ url: signed.signedUrl });
+  } catch (e) {
+    console.error("download-packet error:", e);
+
+    // If our timeout already fired, don’t double-respond
+    if (timeoutFired || res.headersSent) return;
+
+    // Better status mapping
+    const msg = safeStr(e?.message || "Server error");
+    const code =
+      msg.includes("Unauthorized") || msg.includes("Missing auth") ? 401 :
+      msg.includes("No access") ? 403 :
+      msg.includes("Missing") ? 400 :
+      500;
+
+    return res.status(code).json({ error: msg });
+  } finally {
+    clearTimeout(hardTimeout);
+  }
+}
+
+
+===== FILE: pages/api/studio/download-page.js  (size=7933 bytes) =====
+// pages/api/studio/download-page.js
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { buildPagePdf } from "@/lib/studio/build-pdf";
+
+/**
+ * POST /api/studio/download-page
+ * body: { universe_id, page_type, mode? }  // mode: "full" | "preview"
+ */
+
+/* -----------------------------
+   Shared helpers (tier + access)
+--------------------------------*/
+const ACCESS_TIERS = ["public", "priority", "producer", "packaging"];
+const TIER_RANK = { public: 0, priority: 1, producer: 2, packaging: 3 };
+
+function safeStr(v) {
+  return String(v ?? "").trim();
+}
+function safeJson(v, fallback = {}) {
+  try {
+    if (!v) return fallback;
+    if (typeof v === "object") return v;
+    const parsed = JSON.parse(String(v));
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function normalizeTier(t) {
+  const v = safeStr(t).toLowerCase();
+  return ACCESS_TIERS.includes(v) ? v : "public";
+}
+function canAccess(viewerTier, requiredTier) {
+  const vt = normalizeTier(viewerTier);
+  const rt = normalizeTier(requiredTier);
+  return (TIER_RANK[vt] ?? 0) >= (TIER_RANK[rt] ?? 0);
+}
+
+// match your studios/[slug].js behavior
+const PAGE_TYPE_DEFAULT_TIER = {
+  logline: "public",
+  pitch_1p: "public",
+  synopsis_1page: "public",
+  comparable_titles: "public",
+  format_rating_audience: "public",
+  one_sheet: "public",
+
+  beat_sheet: "priority",
+  season1_outline: "priority",
+  episode_list: "priority",
+  pilot_outline: "priority",
+  signature_scene_clip: "priority",
+  teaser_trailer: "priority",
+  themes_main_hero_villain: "priority",
+  trailer_cue_stingers: "priority",
+
+  series_bible: "producer",
+  world_rules_factions: "producer",
+  timeline: "producer",
+  glossary: "producer",
+  cast_profiles_arcs: "producer",
+  lookbook_pdf: "producer",
+  poster_key_art: "producer",
+  trailer_storyboard: "producer",
+  franchise_roadmap: "producer",
+  pilot_script_or_treatment: "producer",
+
+  chain_of_title_rights_matrix: "packaging",
+  option_term_sheet_producer_packet: "packaging",
+  negotiation: "packaging",
+};
+
+function getPageVisibility(page) {
+  const md = safeJson(page?.metadata, {});
+  const v = String(md?.visibility || "public").toLowerCase();
+  return v === "vault" ? "vault" : "public";
+}
+
+function getPageAccessTier(page) {
+  const md = safeJson(page?.metadata, {});
+  // explicit override
+  if (md?.access_tier) return normalizeTier(md.access_tier);
+  // vault implies packaging
+  if (getPageVisibility(page) === "vault") return "packaging";
+  // default map by page_type
+  const t = safeStr(page?.page_type);
+  return normalizeTier(PAGE_TYPE_DEFAULT_TIER[t] || "public");
+}
+
+function getClientIp(req) {
+  const xf = req.headers["x-forwarded-for"];
+  if (typeof xf === "string" && xf.length) return xf.split(",")[0].trim();
+  if (Array.isArray(xf) && xf.length) return String(xf[0]).trim();
+  return req.socket?.remoteAddress || null;
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).end();
+
+  // small helper to log both allowed + denied attempts
+  async function logDownloadAttempt({
+    user_id,
+    universe_id,
+    page_id = null,
+    viewer_tier = "public",
+    required_tier = "public",
+    is_locked = false,
+    file_path = null,
+    file_size_bytes = null,
+    share_token = null,
+    download_kind = "page_pdf",
+  }) {
+    const ip = getClientIp(req);
+    const user_agent = safeStr(req.headers["user-agent"] || "") || null;
+
+    // DO NOT throw if logging fails
+    try {
+      await supabaseAdmin.from("studio_download_logs").insert({
+        universe_id,
+        user_id: user_id || null,
+        download_kind, // ✅ required by schema
+        page_id,       // ✅ FK to studio_pages
+        viewer_tier: normalizeTier(viewer_tier),     // ✅ required by schema
+        required_tier: normalizeTier(required_tier), // ✅ required by schema
+        is_locked: !!is_locked,                      // ✅ required by schema
+        share_token,
+        file_path,
+        file_size_bytes,
+        ip,
+        user_agent,
+      });
+    } catch (e) {
+      console.warn("studio_download_logs insert failed:", e?.message || e);
+    }
+  }
+
+  try {
+    // 1) Auth (unchanged)
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.replace("Bearer ", "");
+    if (!token) throw new Error("Missing auth token");
+
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabaseAdmin.auth.getUser(token);
+
+    if (authErr || !user) throw new Error("Unauthorized");
+
+    const { universe_id, page_type, mode = "full" } = req.body || {};
+    if (!universe_id || !page_type) throw new Error("Missing parameters");
+
+    // 2) Entitlement check (✅ bulletproof: always pick latest updated row)
+    const { data: ent } = await supabaseAdmin
+      .from("studio_entitlements")
+      .select("tier,status,expires_at,updated_at")
+      .eq("user_id", user.id)
+      .eq("universe_id", universe_id)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const now = new Date();
+    const active =
+      ent &&
+      ent.status === "active" &&
+      (!ent.expires_at || new Date(ent.expires_at) > now);
+
+    const viewerTier = active ? normalizeTier(ent.tier) : "public";
+
+    if (!active) {
+      throw new Error("No active entitlement");
+    }
+
+    // 3) Load page (unchanged query)
+    const { data: page } = await supabaseAdmin
+      .from("studio_pages")
+      .select("*")
+      .eq("universe_id", universe_id)
+      .eq("page_type", page_type)
+      .eq("status", "published")
+      .single();
+
+    if (!page) throw new Error("Page not found");
+
+    // ✅ 4) Enforce required tier for THIS page (prevents tier leakage)
+    const requiredTier = getPageAccessTier(page);
+    const allowed = canAccess(viewerTier, requiredTier);
+
+    if (!allowed) {
+      await logDownloadAttempt({
+        user_id: user.id,
+        universe_id,
+        page_id: page.id,
+        viewer_tier: viewerTier,
+        required_tier: requiredTier,
+        is_locked: true,
+        download_kind: "page_pdf",
+      });
+      throw new Error(`Requires ${requiredTier} access`);
+    }
+
+    // 5) Generate PDF (same as before, with optional preview watermark)
+    const watermark =
+      mode === "preview"
+        ? "PREVIEW — MANYAGI STUDIOS"
+        : "CONFIDENTIAL — MANYAGI STUDIOS";
+
+    const pdfBuffer = await buildPagePdf(page, { watermark });
+
+    // 6) Upload to PRIVATE studio bucket (kept, but path includes mode to avoid collisions)
+    const path = `studios/${universe_id}/pages/${mode}/${page.page_type}.pdf`;
+
+    const { error: uploadErr } = await supabaseAdmin.storage
+      .from("studio")
+      .upload(path, pdfBuffer, {
+        contentType: "application/pdf",
+        upsert: true,
+      });
+
+    if (uploadErr) throw uploadErr;
+
+    // 7) Signed URL (unchanged)
+    const { data: signed, error: signErr } = await supabaseAdmin.storage
+      .from("studio")
+      .createSignedUrl(path, 60 * 10); // 10 minutes
+
+    if (signErr) throw signErr;
+
+    // ✅ 8) Correct download log (schema-aligned; no fake columns)
+    await logDownloadAttempt({
+      user_id: user.id,
+      universe_id,
+      page_id: page.id,
+      viewer_tier: viewerTier,
+      required_tier: requiredTier,
+      is_locked: false,
+      download_kind: "page_pdf",
+      file_path: path,
+      file_size_bytes: pdfBuffer?.length ?? null,
+    });
+
+    return res.json({ url: signed.signedUrl });
+  } catch (e) {
+    console.error("download-page error:", e);
+    // 401 keeps your current behavior; if you want strict semantics: use 403 for locked
+    return res.status(401).json({ error: e.message });
+  }
+}
+
+
 ===== FILE: pages/api/track.js  (size=809 bytes) =====
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
@@ -21260,6 +21919,137 @@ export default function CartPage() {
     </>
   );
 };
+
+
+===== FILE: pages/checkout/studio-cancel.js  (size=1639 bytes) =====
+import Head from "next/head";
+import Link from "next/link";
+import { useRouter } from "next/router";
+import { useMemo } from "react";
+
+export default function StudioCheckoutCancel() {
+  const router = useRouter();
+  const next = useMemo(() => String(router.query?.next || "/studios"), [router.query]);
+
+  return (
+    <>
+      <Head>
+        <title>Checkout Cancelled — Manyagi</title>
+        <meta name="robots" content="noindex,nofollow" />
+      </Head>
+
+      <section className="container mx-auto px-4 py-16">
+        <div className="max-w-2xl mx-auto rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-8 text-center">
+          <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Checkout Cancelled</div>
+          <h1 className="text-3xl font-bold mt-2">No worries</h1>
+          <p className="opacity-80 mt-3">
+            Your payment wasn’t completed. You can try again anytime.
+          </p>
+
+          <div className="mt-6 flex flex-wrap gap-3 justify-center">
+            <button
+              onClick={() => router.replace(next || "/studios")}
+              className="px-6 py-3 rounded-2xl bg-black text-white dark:bg-white dark:text-black font-semibold"
+            >
+              Back
+            </button>
+            <Link
+              href="/studios"
+              className="px-6 py-3 rounded-2xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40"
+            >
+              Studios Library
+            </Link>
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+
+===== FILE: pages/checkout/studio-success.js  (size=2974 bytes) =====
+import Head from "next/head";
+import Link from "next/link";
+import { useRouter } from "next/router";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase";
+
+export default function StudioCheckoutSuccess() {
+  const router = useRouter();
+  const session_id = useMemo(() => String(router.query?.session_id || ""), [router.query]);
+  const next = useMemo(() => String(router.query?.next || "/studios"), [router.query]);
+
+  const [countdown, setCountdown] = useState(4);
+  const [status, setStatus] = useState("Finalizing your access…");
+
+  useEffect(() => {
+    if (!router.isReady) return;
+
+    // Optional: try a quick session refresh (helps when coming back from Stripe)
+    supabase.auth.getSession().catch(() => {});
+
+    // Give webhook time to write entitlement, then send user back.
+    const t1 = setTimeout(() => setStatus("Almost done… redirecting you back to Studios."), 1200);
+
+    const interval = setInterval(() => {
+      setCountdown((c) => (c <= 1 ? 0 : c - 1));
+    }, 1000);
+
+    const t2 = setTimeout(() => {
+      router.replace(next || "/studios");
+    }, 4200);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearInterval(interval);
+    };
+  }, [router.isReady, next, router]);
+
+  return (
+    <>
+      <Head>
+        <title>Studio Access Unlocked — Manyagi</title>
+        <meta name="robots" content="noindex,nofollow" />
+      </Head>
+
+      <section className="container mx-auto px-4 py-16">
+        <div className="max-w-2xl mx-auto rounded-3xl border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 shadow-sm p-8 text-center">
+          <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Payment Success</div>
+          <h1 className="text-3xl font-bold mt-2">Studio access unlocked</h1>
+
+          <p className="opacity-80 mt-3">{status}</p>
+
+          {session_id ? (
+            <div className="text-xs opacity-60 mt-3 break-all">
+              session_id: {session_id}
+            </div>
+          ) : null}
+
+          <div className="mt-6 flex flex-wrap gap-3 justify-center">
+            <button
+              onClick={() => router.replace(next || "/studios")}
+              className="px-6 py-3 rounded-2xl bg-black text-white dark:bg-white dark:text-black font-semibold"
+            >
+              Continue ({countdown || 0})
+            </button>
+
+            <Link
+              href="/studios"
+              className="px-6 py-3 rounded-2xl border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-950/40"
+            >
+              Studios Library
+            </Link>
+          </div>
+
+          <div className="text-xs opacity-60 mt-6">
+            If you still see locked content after redirect, refresh once — the entitlement is applied by Stripe webhook.
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
 
 
 ===== FILE: pages/coming-soon.js  (size=1293 bytes) =====
@@ -27348,7 +28138,7 @@ export default function Studios() {
 }
 
 
-===== FILE: pages/studios/[slug].js  (size=110624 bytes) =====
+===== FILE: pages/studios/[slug].js  (size=111298 bytes) =====
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -27632,10 +28422,6 @@ function prettyType(t) {
     scene: "Scenes",
     playlist: "Playlists",
     musicvideo: "Music Videos",
-    reel: "Reels",
-    podcast: "Podcasts",
-    interview: "Interviews",
-    event: "Events",
     other: "Media",
   };
   return map[v] || "Media";
@@ -27990,14 +28776,6 @@ function AttachmentCard({ att }) {
               {ft && ft !== "image" ? ` • ${ft.toUpperCase()}` : ""}
             </div>
             <div className="text-lg font-semibold mt-1 truncate">{title}</div>
-            {(att?.duration || att?.bpm || att?.license_tier) ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {att?.duration ? chip(String(att.duration)) : null}
-                {att?.bpm ? chip(`${att.bpm} BPM`) : null}
-                {att?.license_tier ? chip(String(att.license_tier)) : null}
-              </div>
-            ) : null}
-            {att?.notes ? <div className="text-sm opacity-80 mt-3 whitespace-pre-wrap">{att.notes}</div> : null}
           </div>
         </div>
         <div className="mt-4">
@@ -28255,7 +29033,7 @@ function AccessGateCard({ viewerTier, requiredTier, title, subtitle, universe, o
     </div>
   );
 }
-function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offers = [], offersLoading = false, entitlement }) {
+function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offers = [], offersLoading = false, entitlement, onDownloadPacket }) {
   const fallbackTiers = [
     {
       key: "priority",
@@ -28312,13 +29090,11 @@ function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offe
         <div>
           <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Packages</div>
           <div className="text-2xl font-bold mt-2">Choose access level</div>
-          <div className="text-sm opacity-80 mt-2">
-            Organize your studio pages into sellable tiers.
+          <div className="text-sm opacity-80 mt-2">Organize your studio pages into sellable tiers.
             {offersLoading ? " (Loading offers…)" : ""}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={tierBadge(viewerTier)}>Viewing: {tierLabel(viewerTier)}</span>
-            {showVault ? chip("Vault: ON") : chip("Vault: OFF")}
           </div>
         </div>
         {/* tier buttons stay the same */}
@@ -28394,8 +29170,16 @@ function PackagesBar({ universe, viewerTier, uiTier, showVault, onCheckout, offe
               </ul>
               <div className="mt-4 flex gap-2">
                 {unlocked ? (
-                  <div className="flex-1 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold text-center">
-                    Unlocked ✓
+                  <div className="flex flex-col gap-2 flex-1">
+                    <div className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold text-center">
+                      Unlocked ✓
+                    </div>
+                    <button
+                      onClick={() => (typeof onDownloadPacket === "function" ? onDownloadPacket(t.key) : null)}
+                      className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-semibold"
+                    >
+                      Download {tierLabel(t.key)} Packet →
+                    </button>
                   </div>
                 ) : (
                   <button
@@ -28852,6 +29636,48 @@ export default function StudioUniverse() {
   const [bookProducts, setBookProducts] = useState([]);
   const [studioOffers, setStudioOffers] = useState([]);
   const [offersLoading, setOffersLoading] = useState(false);
+  async function getAccessTokenOrThrow() {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) throw new Error("Not logged in");
+    return token;
+  }
+  async function downloadPagePdf(page_type, mode = "full") {
+    try {
+      const token = await getAccessTokenOrThrow();
+      const r = await fetch("/api/studio/download-page", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ universe_id: universe.id, page_type, mode }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "Download failed");
+      window.open(j.url, "_blank");
+    } catch (e) {
+      alert(e.message || "Download failed");
+    }
+  }
+  async function downloadPacket(tier = "producer", mode = "full", include_vault = false) {
+    try {
+      const token = await getAccessTokenOrThrow();
+      const r = await fetch("/api/studio/download-packet", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ universe_id: universe.id, tier, mode, include_vault }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "Packet download failed");
+      window.open(j.url, "_blank");
+    } catch (e) {
+      alert(e.message || "Download failed");
+    }
+  }
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
@@ -28972,10 +29798,32 @@ export default function StudioUniverse() {
     let cancelled = false;
     (async () => {
       try {
-        // Pull all publishing products from your existing API
-        const res = await fetch("/api/products?division=publishing");
-        const json = await res.json();
-        const all = asList(json).map((p) => {
+        // Fetch attached publishing products from universe_assets
+        const { data: attached, error: attachedErr } = await supabase
+          .from("universe_assets")
+          .select("source_product_id")
+          .eq("universe_id", universe.id)
+          .eq("source_type", "product")
+          .eq("division", "publishing");
+
+        if (attachedErr) throw attachedErr;
+
+        const ids = attached.map((a) => a.source_product_id).filter(Boolean);
+
+        if (!ids.length) {
+          if (!cancelled) setBookProducts([]);
+          return;
+        }
+
+        const { data: products, error: productsErr } = await supabase
+          .from("products")
+          .select("*")
+          .in("id", ids)
+          .eq("status", "active");
+
+        if (productsErr) throw productsErr;
+
+        const mapped = products.map((p) => {
           const meta = safeJson(p.metadata, {});
           return {
             ...p,
@@ -28983,11 +29831,8 @@ export default function StudioUniverse() {
             display_image: pickProductImage(p),
           };
         });
-        // books only (exclude studio offers)
-        const books = all.filter(isBookProduct);
-        // scope to this universe
-        const scoped = books.filter((p) => matchesUniverseForProduct(p, universe));
-        if (!cancelled) setBookProducts(scoped);
+
+        if (!cancelled) setBookProducts(mapped);
       } catch (e) {
         console.error("studio books fetch error:", e);
         if (!cancelled) setBookProducts([]);
@@ -28996,7 +29841,7 @@ export default function StudioUniverse() {
     return () => {
       cancelled = true;
     };
-  }, [universe?.id, universe?.slug, universe?.title]);
+  }, [universe?.id]);
   const heroImages = useMemo(() => {
     const thumbs = assets.map((x) => getThumb(x)).filter(Boolean).slice(0, 6);
     if (thumbs.length) return thumbs;
@@ -29013,7 +29858,7 @@ export default function StudioUniverse() {
     );
   }, [assets]);
   const trailerUrl = useMemo(() => {
-    return getAssetUrl(trailerAsset) || universe?.hero_video_url || null;
+    return universe?.trailer_video_url || getAssetUrl(trailerAsset) || universe?.hero_video_url || null;
   }, [trailerAsset, universe]);
   const worldMapAssets = useMemo(() => {
     return assets
@@ -29351,6 +30196,7 @@ export default function StudioUniverse() {
           offers={studioOffers}
           offersLoading={offersLoading}
           entitlement={entitlement}
+          onDownloadPacket={(tierKey) => downloadPacket(tierKey)}
         />
       </section>
       <SectionIntro
@@ -29662,6 +30508,16 @@ export default function StudioUniverse() {
                             {body ? renderPlainMarkdown(body) : <div className="text-sm opacity-70">No content yet.</div>}
                           </div>
                           <PageAttachmentsRail page={p} />
+                          {canViewTier(viewerTier, requiredTier) ? (
+                            <div className="mt-6 flex justify-end">
+                              <button
+                                onClick={() => downloadPagePdf(p.page_type)}
+                                className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-semibold"
+                              >
+                                Download PDF →
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       </AccessGateCard>
                     );
@@ -29847,35 +30703,6 @@ export default function StudioUniverse() {
               </a>
             </Card>
           ) : null}
-        </div>
-      </section>
-      <section className="container mx-auto px-4 pb-14">
-        <div className="rounded-3xl bg-white/80 dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 shadow-sm p-6 md:p-8">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">Creator</div>
-              <div className="text-2xl font-bold mt-1">Credits</div>
-            </div>
-            <div className="flex gap-2 flex-wrap justify-end">
-              {chip("© Manyagi Studios")}
-              {chip("All Rights Reserved")}
-              {chip("Original IP")}
-            </div>
-          </div>
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 p-4">
-              <div className="text-xs opacity-60 uppercase tracking-wider">Created by</div>
-              <div className="font-semibold mt-1">Dennis Manyagi</div>
-            </div>
-            <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 p-4">
-              <div className="text-xs opacity-60 uppercase tracking-wider">Music / Sound</div>
-              <div className="font-semibold mt-1">Manyagi Media</div>
-            </div>
-            <div className="rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30 p-4">
-              <div className="text-xs opacity-60 uppercase tracking-wider">Studio Packaging</div>
-              <div className="font-semibold mt-1">Manyagi Studios</div>
-            </div>
-          </div>
         </div>
       </section>
       <section className="container mx-auto px-4 pb-20" id="contact">
