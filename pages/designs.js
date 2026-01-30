@@ -113,6 +113,7 @@ export default function Designs() {
       const nextItems = nextItemsRaw.map((p) => ({
         ...p,
         display_image: pickImage(p),
+        slug: p.slug || p.id, // Fallback to id if slug is missing
       }));
 
       setItems((prev) => (append ? [...prev, ...nextItems] : nextItems));
@@ -168,6 +169,7 @@ export default function Designs() {
       const normalized = raw.map((p) => ({
         ...p,
         display_image: pickImage(p),
+        slug: p.slug || p.id, // Fallback to id if slug is missing
       }));
 
       setRailItems(normalized);

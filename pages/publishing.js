@@ -65,6 +65,7 @@ export default function Publishing() {
         const list = asList(json).map((p) => ({
           ...p,
           display_image: pickImage(p),
+          slug: p.slug || p.id, // Fallback to id if slug is missing
         }));
         setProducts(list);
         setTotal(Number(json?.total ?? list.length));

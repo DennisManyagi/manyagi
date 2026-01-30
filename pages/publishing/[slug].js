@@ -1,4 +1,3 @@
-// pages/publishing/[slug].js
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -8,6 +7,7 @@ import { addToCart } from '../../lib/cartSlice';
 import SubscriptionForm from '../../components/SubscriptionForm';
 import Recommender from '../../components/Recommender';
 import SectionIntro from '../../components/SectionIntro';
+import { supabase } from '@/lib/supabase';
 
 const PLACEHOLDER_IMAGE =
   'https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/images/og-home.webp';
@@ -167,6 +167,27 @@ function pickIp(meta) {
   );
 }
 
+function norm(s = "") {
+  return String(s || "").toLowerCase().trim();
+}
+
+function pickProductArt(p) {
+  return (
+    p?.thumbnail_url ||
+    p?.featured_image ||
+    PLACEHOLDER_IMAGE
+  );
+}
+
+function getProductBlurb(p) {
+  return (
+    p?.description ||
+    p?.tagline ||
+    p?.synopsis ||
+    "Premium merchandise from the Manyagi Universe."
+  );
+}
+
 function Chip({ children, tone = 'neutral' }) {
   const cls =
     tone === 'amber'
@@ -270,6 +291,89 @@ function MediaEmbed({ mediaUrl, audioUrl }) {
   );
 }
 
+function ProductRailRow({ title, subtitle, items }) {
+  if (!items?.length) return null;
+
+  return (
+    <section className="container mx-auto px-4 pb-10">
+      <div className="flex items-end justify-between gap-4 mb-4">
+        <div>
+          <div className="text-sm opacity-70">{subtitle}</div>
+          <h3 className="text-xl md:text-2xl font-bold">{title}</h3>
+        </div>
+      </div>
+
+      {/* Netflix-ish rail */}
+      <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+        {items.map((p) => {
+          const art = pickProductArt(p);
+          const div = norm(p.division || 'publishing');
+
+          return (
+            <Link
+              key={p.id}
+              href={`/${div}/${p.slug}`}
+              className="group min-w-[280px] sm:min-w-[320px] md:min-w-[360px] rounded-3xl overflow-hidden border border-gray-200/80 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-sm hover:shadow-md transition"
+            >
+              <div className="relative h-44">
+                <img
+                  src={art}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-gradient-to-tr from-black/65 via-black/20 to-transparent" />
+
+                {/* Top chips */}
+                <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2">
+                  <div className="flex gap-2 flex-wrap">
+                    <span className="text-[11px] px-2 py-1 rounded-full bg-white/90 text-black font-semibold">
+                      {formatDivision(p.division)}
+                    </span>
+                    {p.price && (
+                      <span className="text-[11px] px-2 py-1 rounded-full bg-amber-200 text-amber-900 font-semibold">
+                        ${p.price.toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-white/70">
+                    {formatDate(p.created_at)}
+                  </div>
+                </div>
+
+                {/* Title */}
+                <div className="absolute bottom-4 left-4 right-4">
+                  <div className="text-[11px] tracking-[0.26em] uppercase text-white/70">
+                    Product
+                  </div>
+                  <div className="text-xl font-bold text-white leading-tight">
+                    {p.name}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5">
+                <p className="text-sm opacity-80 line-clamp-3">
+                  {getProductBlurb(p)}
+                </p>
+
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-sm font-semibold underline">
+                    View →
+                  </span>
+                  <span className="text-xs opacity-60">
+                    {p.productType || 'Book'}
+                  </span>
+                </div>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export default function PublishingProduct() {
   const router = useRouter();
   const { slug } = router.query;
@@ -277,6 +381,7 @@ export default function PublishingProduct() {
 
   const [product, setProduct] = useState(null);
   const [linkedMedia, setLinkedMedia] = useState(null);
+  const [relatedProducts, setRelatedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
@@ -287,11 +392,17 @@ export default function PublishingProduct() {
       setLoading(true);
       setProduct(null);
       setLinkedMedia(null);
+      setRelatedProducts([]);
 
       try {
-        const res = await fetch(`/api/products/${slug}`);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data?.error) throw new Error(data?.error || 'Product not found');
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .or(`id.eq.${slug},slug.eq.${slug}`)
+          .eq('division', 'publishing')
+          .single();
+
+        if (error || !data) throw new Error(error?.message || 'Product not found');
 
         const m0 = safeMeta(data?.metadata);
         const u0 = bestUrl(m0, data || {});
@@ -301,13 +412,35 @@ export default function PublishingProduct() {
 
         if (!hasDirectMedia) {
           try {
-            const res2 = await fetch(`/api/products?division=media&limit=50`);
-            const json2 = await res2.json().catch(() => ({}));
-            const raw = Array.isArray(json2?.items) ? json2.items : Array.isArray(json2) ? json2 : [];
-            const match = raw.find((p) => asStr(p?.slug) === asStr(slug));
-            if (match) setLinkedMedia(match);
+            const { data: mediaData, error: mediaError } = await supabase
+              .from('products')
+              .select('*')
+              .eq('division', 'media')
+              .or(`id.eq.${slug},slug.eq.${slug}`)
+              .limit(1)
+              .single();
+
+            if (!mediaError && mediaData) setLinkedMedia(mediaData);
           } catch (e2) {
             console.warn('Media lookup failed:', e2);
+          }
+        }
+
+        // Fetch related products from same universe/IP
+        const meta = safeMeta(data?.metadata);
+        const ip = pickIp(meta);
+        if (ip) {
+          const { data: related, error: relatedError } = await supabase
+            .from('products')
+            .select('*')
+            .or(`metadata->>book.eq.${ip},metadata->>series.eq.${ip},metadata->>universe.eq.${ip},metadata->>ip.eq.${ip},metadata->>franchise.eq.${ip}`)
+            .neq('id', data.id)
+            .neq('slug', slug);
+
+          if (relatedError) {
+            console.error('Related products fetch error:', relatedError);
+          } else {
+            setRelatedProducts(related || []);
           }
         }
       } catch (e) {
@@ -318,7 +451,7 @@ export default function PublishingProduct() {
           slug: 'fallback-book',
           description: 'Fallback publishing product.',
           created_at: '2025-09-01T00:00:00Z',
-          featured_image: PLACEHOLDER_IMAGE,
+          thumbnail_url: PLACEHOLDER_IMAGE,
           division: 'publishing',
           metadata: { book: 'Sample', year: 2025 },
         });
@@ -364,7 +497,6 @@ export default function PublishingProduct() {
   const downloadUrl = asStr(meta?.download_url).trim();
   const licenseUrl = asStr(meta?.license_url).trim();
   const rightsNote = asStr(meta?.rights_note).trim(); // optional
-  const contactEmail = asStr(meta?.contact_email).trim() || 'studios@manyagi.net';
 
   const mediaSlug = asStr(linkedMedia?.slug || product?.slug).trim();
 
@@ -412,6 +544,10 @@ export default function PublishingProduct() {
       setCheckoutLoading(false);
     }
   };
+
+  const relatedDesigns = useMemo(() => relatedProducts.filter((p) => norm(p.division) === 'designs'), [relatedProducts]);
+  const relatedBooks = useMemo(() => relatedProducts.filter((p) => norm(p.division) === 'publishing'), [relatedProducts]);
+  const relatedMediaItems = useMemo(() => relatedProducts.filter((p) => norm(p.division) === 'media'), [relatedProducts]);
 
   if (loading) {
     return <div className="container mx-auto px-4 py-16 text-center">Loading product…</div>;
@@ -467,8 +603,8 @@ export default function PublishingProduct() {
 
         <article className="container mx-auto px-4 pb-16">
           <div className="max-w-5xl mx-auto">
-            {/* Back row */}
-            <div className="mb-4 flex items-center justify-between gap-3">
+            {/* Sticky top bar for navigation */}
+            <div className="sticky top-0 z-10 mb-4 flex items-center justify-between gap-3 bg-white/80 dark:bg-gray-950/80 backdrop-blur py-2 px-4 rounded-full shadow-md">
               <Link
                 href="/publishing"
                 className="inline-flex items-center text-xs text-gray-600 hover:text-blue-600 dark:text-gray-300"
@@ -476,38 +612,91 @@ export default function PublishingProduct() {
                 ← Back to Publishing
               </Link>
 
-              {/* Executive quick actions (always visible) */}
               <div className="flex gap-2 flex-wrap justify-end">
-                <Link
-                  href="/publishing"
-                  className="px-4 py-2 rounded-full text-xs font-semibold border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/60 hover:bg-white dark:hover:bg-gray-900 transition shadow-sm"
-                >
-                  Publishing Library →
-                </Link>
-                {mediaSlug && (
-                  <Link
-                    href={`/media/${mediaSlug}`}
-                    className="px-4 py-2 rounded-full text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm"
-                  >
-                    Media Detail →
-                  </Link>
-                )}
-                <a
-                  href={`mailto:${contactEmail}?subject=${encodeURIComponent(
-                    `Inquiry — ${product.name}`
-                  )}`}
-                  className="px-4 py-2 rounded-full text-xs font-semibold border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50/80 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100/70 dark:hover:bg-emerald-900/30 transition shadow-sm"
-                >
-                  Contact
-                </a>
               </div>
             </div>
 
-            {/* MAIN CARD */}
-            <div className="rounded-[28px] border border-gray-200/70 dark:border-gray-800 bg-white/80 dark:bg-gray-950/60 backdrop-blur shadow-[0_10px_50px_-20px_rgba(0,0,0,0.35)] overflow-hidden">
-              {/* Media panel: premium look */}
+            {/* MAIN CARD - Polished like featured banner */}
+            <div className="rounded-[28px] overflow-hidden border border-gray-200/80 dark:border-gray-800 bg-white/70 dark:bg-gray-900/50 shadow-[0_10px_50px_-20px_rgba(0,0,0,0.35)]">
+              <div className="grid grid-cols-1 lg:grid-cols-2">
+                <div className="p-7 md:p-10">
+                  <div className="text-[11px] tracking-[0.28em] uppercase opacity-70">
+                    Featured Book
+                  </div>
+                  <h2 className="text-3xl md:text-4xl font-bold mt-2 leading-tight">
+                    {product.name}
+                  </h2>
+                  <p className="mt-3 opacity-80 max-w-xl">
+                    {product.description || 'A story from the Manyagi Universe.'}
+                  </p>
+
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    {metaLineParts.length > 0 && <Chip>{metaLineParts.join(' • ')}</Chip>}
+                    {ip && <Chip tone="amber">{ip}</Chip>}
+                    {mediaType && <Chip>{mediaType}</Chip>}
+                    {platform && <Chip tone="blue">{platform}</Chip>}
+                  </div>
+
+                  <div className="mt-7 flex gap-3 flex-wrap">
+                    {buyUrl && (
+                      <a
+                        href={buyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-5 py-2 rounded-xl bg-blue-600 text-white dark:bg-blue-600 dark:text-white"
+                      >
+                        Get Your Copy Now
+                      </a>
+                    )}
+                    {!buyUrl && stripePriceId && (
+                      <button
+                        disabled={checkoutLoading}
+                        onClick={handleStripeCheckout}
+                        className="px-5 py-2 rounded-xl bg-blue-600 text-white dark:bg-blue-600 dark:text-white disabled:bg-gray-400"
+                      >
+                        {checkoutLoading ? 'Redirecting...' : 'Buy Digital Edition'}
+                      </button>
+                    )}
+                    <button
+                      onClick={handleAddToCart}
+                      className="px-5 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black"
+                    >
+                      Add to Cart {product.price ? `- $${product.price.toFixed(2)}` : ''}
+                    </button>
+                  </div>
+
+                  {alsoLinks.length > 0 && (
+                    <div className="text-xs opacity-60 mt-4">
+                      Also available:{' '}
+                      {alsoLinks.map((l, i) => (
+                        <a
+                          key={l.label}
+                          href={l.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          {l.label}
+                          {i < alsoLinks.length - 1 ? ', ' : ''}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative min-h-[320px]">
+                  <img
+                    src={pickProductArt(product)}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              </div>
+
+              {/* Media panel: premium look with hover animation */}
               {showMediaPanel && hasMedia && (
-                <div className="p-6 md:p-8 border-b border-gray-200/70 dark:border-gray-800">
+                <div className="p-6 md:p-8 border-t border-gray-200/70 dark:border-gray-800 transition-all hover:shadow-lg">
                   <div className="relative rounded-[22px] overflow-hidden">
                     {/* gradient border */}
                     <div className="absolute inset-0 bg-gradient-to-r from-amber-200/60 via-blue-200/40 to-purple-200/50 dark:from-amber-900/30 dark:via-blue-900/20 dark:to-purple-900/25" />
@@ -550,7 +739,7 @@ export default function PublishingProduct() {
                               href={licenseUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="px-4 py-2 rounded-full text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm"
+                              className="px-4 py-2 rounded-full text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm hover:scale-105"
                             >
                               License →
                             </a>
@@ -560,19 +749,11 @@ export default function PublishingProduct() {
                               href={downloadUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="px-4 py-2 rounded-full text-sm font-semibold bg-gray-900 text-white hover:bg-black transition shadow-sm"
+                              className="px-4 py-2 rounded-full text-sm font-semibold bg-gray-900 text-white hover:bg-black transition shadow-sm hover:scale-105"
                             >
                               Download →
                             </a>
                           )}
-                          <a
-                            href={`mailto:${contactEmail}?subject=${encodeURIComponent(
-                              `Inquiry — ${product.name}`
-                            )}`}
-                            className="px-4 py-2 rounded-full text-sm font-semibold border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/60 hover:bg-gray-50 dark:hover:bg-gray-900 transition shadow-sm"
-                          >
-                            Inquire →
-                          </a>
                         </div>
                       </div>
 
@@ -589,92 +770,65 @@ export default function PublishingProduct() {
                           <Chip tone="amber">Option / Sync</Chip>
                           {!!rightsNote && <Chip>{rightsNote}</Chip>}
                         </div>
-
-                        <div className="text-xs text-gray-600 dark:text-gray-300">
-                          For inquiries: <span className="font-semibold">{contactEmail}</span>
-                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Featured image */}
-              {product.featured_image && (
-                <div className="px-6 md:px-8 pt-6 md:pt-8">
-                  <div className="overflow-hidden rounded-2xl bg-black/5 border border-gray-200/60 dark:border-gray-800">
-                    <img
-                      src={product.featured_image || PLACEHOLDER_IMAGE}
-                      alt={product.name}
-                      className="w-full h-64 md:h-80 object-cover"
-                    />
-                  </div>
-                </div>
-              )}
-
               {/* Content */}
-              <div className="px-6 md:px-8 py-6 md:py-8">
+              <div className="px-6 md:px-8 py-6 md:py-8 border-t border-gray-200/70 dark:border-gray-800">
                 <div className="prose max-w-none prose-sm md:prose-base dark:prose-invert">
                   {renderContentBlocks(product.description)}
                 </div>
-                <div className="mt-6 flex flex-wrap gap-3 justify-center">
-                  {buyUrl && (
-                    <a
-                      href={buyUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition shadow-sm"
-                    >
-                      Get Your Copy
-                    </a>
+
+                {/* Metadata Grid */}
+                <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {product.price && (
+                    <div className="p-4 bg-gray-100/50 dark:bg-gray-800/50 rounded-lg">
+                      <p className="text-sm font-semibold">Price</p>
+                      <p className="text-lg">${product.price.toFixed(2)}</p>
+                    </div>
                   )}
-                  {!buyUrl && stripePriceId && (
-                    <button
-                      disabled={checkoutLoading}
-                      onClick={handleStripeCheckout}
-                      className="px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition shadow-sm disabled:bg-gray-400"
-                    >
-                      {checkoutLoading ? 'Redirecting...' : 'Buy Digital'}
-                    </button>
+                  {meta.year && (
+                    <div className="p-4 bg-gray-100/50 dark:bg-gray-800/50 rounded-lg">
+                      <p className="text-sm font-semibold">Year</p>
+                      <p className="text-lg">{meta.year}</p>
+                    </div>
                   )}
-                  {meta.pdf_url && (
-                    <a
-                      href={meta.pdf_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-6 py-3 bg-gray-700 text-white rounded-full hover:bg-gray-800 transition shadow-sm"
-                    >
-                      Read Sample
-                    </a>
-                  )}
-                  {!buyUrl && !stripePriceId && (
-                    <button
-                      onClick={handleAddToCart}
-                      className="px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition shadow-sm"
-                    >
-                      Add to Cart
-                    </button>
-                  )}
+                  {/* Add more meta fields as needed */}
                 </div>
-                {alsoLinks.length > 0 && (
-                  <div className="text-xs text-gray-600 dark:text-gray-300 mt-3 text-center">
-                    Also available:{' '}
-                    {alsoLinks.map((l, i) => (
-                      <a
-                        key={l.label}
-                        href={l.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline hover:text-blue-700"
-                      >
-                        {l.label}
-                        {i < alsoLinks.length - 1 ? ', ' : ''}
-                      </a>
-                    ))}
+              </div>
+            </div>
+
+            {/* Related Products Rails */}
+            {relatedBooks.length > 0 && (
+              <div className="mt-12">
+                <h2 className="text-2xl font-bold text-center mb-6">Related Products</h2>
+                <ProductRailRow
+                  title="Related Designs"
+                  subtitle="More merch from this universe"
+                  items={relatedDesigns}
+                />
+                <ProductRailRow
+                  title="Related Books"
+                  subtitle="Books from this universe"
+                  items={relatedBooks}
+                />
+                <ProductRailRow
+                  title="Related Media"
+                  subtitle="Media from this universe"
+                  items={relatedMediaItems}
+                />
+                {!relatedDesigns.length && !relatedBooks.length && !relatedMediaItems.length && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="p-4 bg-white dark:bg-gray-900 rounded-lg shadow">Item 1</div>
+                    <div className="p-4 bg-white dark:bg-gray-900 rounded-lg shadow">Item 2</div>
+                    <div className="p-4 bg-white dark:bg-gray-900 rounded-lg shadow">Item 3</div>
                   </div>
                 )}
               </div>
-            </div>
+            )}
           </div>
         </article>
 
