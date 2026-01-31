@@ -12,6 +12,33 @@ export default function CodexEntry({ entry, products, media, books, relatedLore 
         <title>{entry.title} | Resonance Codex</title>
       </Head>
 
+      {/* NEW: Cinematic featured-image hero (Marvel/DC/Pixar style) */}
+      {entry.featured_image && (
+        <section className="relative h-[60vh] min-h-[420px] w-full overflow-hidden">
+          <img
+            src={entry.featured_image}
+            alt={entry.title}
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+          <div className="relative z-10 container mx-auto px-6 h-full flex items-end pb-16">
+            <div>
+              <div className="text-xs tracking-[0.3em] uppercase text-white/70">
+                Resonance Codex
+              </div>
+              <h1 className="text-4xl md:text-6xl font-bold text-white mt-2">
+                {entry.title}
+              </h1>
+              {entry.excerpt && (
+                <p className="max-w-2xl mt-4 text-white/80 text-lg">
+                  {entry.excerpt}
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
       <div className="container mx-auto px-4 py-16 grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left: Metadata Sidebar */}
         <div className="lg:col-span-3 space-y-6">
@@ -55,9 +82,20 @@ export default function CodexEntry({ entry, products, media, books, relatedLore 
             <div className="text-xs uppercase tracking-[0.3em] text-gray-500">
               Resonance Codex · Eternal Archive
             </div>
-            <h1 className="text-4xl md:text-5xl font-bold tracking-tight font-serif">
-              {entry.title}
-            </h1>
+
+            {/* FIXED: Conditional title rendering - show here only if no featured image (avoids duplicate) */}
+            {!entry.featured_image && (
+              <>
+                <h1 className="text-4xl md:text-5xl font-bold tracking-tight font-serif">
+                  {entry.title}
+                </h1>
+                {entry.excerpt && (
+                  <p className="text-xl opacity-80">
+                    {entry.excerpt}
+                  </p>
+                )}
+              </>
+            )}
 
             <div className="h-px bg-gray-200 dark:bg-gray-800" />
 

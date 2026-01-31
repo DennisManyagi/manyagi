@@ -33,7 +33,6 @@ function guessCategory(entry) {
 
 function RailRow({ title, subtitle, items, q }) {
   if (!items?.length) return null;
-
   return (
     <section className="container mx-auto px-4 pb-10">
       <div className="flex items-end justify-between gap-4 mb-4">
@@ -45,13 +44,11 @@ function RailRow({ title, subtitle, items, q }) {
           <div className="text-xs opacity-70">Filtered by “{q}”</div>
         ) : null}
       </div>
-
       {/* Horizontal scroll rail */}
       <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
         {items.map((entry) => {
           const art = pickLoreArt(entry);
           const category = guessCategory(entry);
-
           return (
             <Link
               key={entry.id}
@@ -66,14 +63,12 @@ function RailRow({ title, subtitle, items, q }) {
                   loading="lazy"
                 />
                 <div className="absolute inset-0 bg-gradient-to-tr from-black/65 via-black/20 to-transparent" />
-
                 {/* Category chip */}
                 <div className="absolute top-3 left-3 flex gap-2 flex-wrap">
                   <span className="text-[11px] px-2 py-1 rounded-full bg-white/90 text-black font-semibold">
                     {category}
                   </span>
                 </div>
-
                 {/* Title */}
                 <div className="absolute bottom-4 left-4 right-4">
                   <div className="text-[11px] tracking-[0.28em] uppercase text-white/70">
@@ -84,12 +79,10 @@ function RailRow({ title, subtitle, items, q }) {
                   </div>
                 </div>
               </div>
-
               <div className="p-5">
                 <p className="text-sm opacity-80 line-clamp-3">
                   {getLoreBlurb(entry)}
                 </p>
-
                 <div className="mt-4 flex items-center justify-between">
                   <span className="text-sm font-semibold underline">
                     Access Entry →
@@ -125,7 +118,6 @@ export default function ResonanceCodex() {
   const filteredEntries = useMemo(() => {
     const query = norm(q);
     if (!query) return entries;
-
     return (entries || []).filter((entry) => {
       const blob = [entry.title, entry.slug, entry.excerpt, entry.content, entry.metadata?.category, entry.metadata?.universe_id]
         .map(norm)
@@ -136,7 +128,6 @@ export default function ResonanceCodex() {
 
   const rails = useMemo(() => {
     const base = filteredEntries || [];
-
     // Group by categories
     const byCategory = {};
     base.forEach((entry) => {
@@ -144,7 +135,6 @@ export default function ResonanceCodex() {
       if (!byCategory[cat]) byCategory[cat] = [];
       byCategory[cat].push(entry);
     });
-
     // Group by universes
     const byUniverse = {};
     base.forEach((entry) => {
@@ -152,10 +142,8 @@ export default function ResonanceCodex() {
       if (!byUniverse[uniId]) byUniverse[uniId] = [];
       byUniverse[uniId].push(entry);
     });
-
     // Example rails: Recent, By Category, By Universe
     const recent = base.slice(0, 12);
-
     return {
       recent,
       byCategory,
@@ -165,9 +153,9 @@ export default function ResonanceCodex() {
 
   const carouselImages = useMemo(() => {
     return [
-      "/images/video-carousel-1.webp",
-      "/images/video-carousel-2.webp",
-      "/images/video-carousel-3.webp",
+      "https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/site/general/2025/12/dsvd0q-var3.png",
+      "https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/site/general/2025/12/Xf-Uwb-var2.png",
+      "https://dlbbjeohndiwtofitwec.supabase.co/storage/v1/object/public/assets/site/general/2025/12/nkWrv2-var1.png",
     ];
   }, []);
 
@@ -178,13 +166,14 @@ export default function ResonanceCodex() {
         <meta name="description" content="The official repository of Manyagi Universe logic, history, and dossiers." />
       </Head>
 
-      <Hero 
-        kicker="Manyagi Archives" 
-        title="The Resonance Codex" 
+      <Hero
+        kicker="Manyagi Archives"
+        title="The Resonance Codex"
         lead="Declassified logic and chronicles from the expanding Manyagi ecosystem. Explore by universe, category, or search for immersive fan experiences."
-        videoSrc="/videos/resonance-bg.mp4" // Looping Exile Portal
         height="h-[500px]"
-        carouselImages={carouselImages}
+        images={carouselImages} // Carousel enabled via array of images (likely fades/slides/auto-rotates in Hero component)
+        interval={5000} // Auto-rotate every 5s (common carousel prop; safe if not used)
+        autoplay // Alternative prop name some Hero components accept (safe fallback)
       >
         <div className="flex flex-wrap gap-3 justify-center">
           <a
@@ -208,7 +197,6 @@ export default function ResonanceCodex() {
                 of <span className="font-semibold">{entries.length}</span>
               </div>
             </div>
-
             <div className="flex gap-2 w-full md:w-[520px]">
               <input
                 value={q}
@@ -322,12 +310,10 @@ export default function ResonanceCodex() {
                         </div>
                       </div>
                     </div>
-
                     <div className="p-5">
                       <p className="text-sm opacity-80 line-clamp-3">
                         {getLoreBlurb(entry)}
                       </p>
-
                       <div className="mt-4 flex items-center justify-between">
                         <div className="text-sm font-semibold underline">
                           Access →
