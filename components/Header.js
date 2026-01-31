@@ -43,6 +43,7 @@ const Header = () => {
           <Link href="/publishing" className={linkClass('/publishing')}>Publishing</Link>
           <Link href="/designs" className={linkClass('/designs')}>Designs</Link>
           <Link href="/media" className={linkClass('/media')}>Media</Link>
+          <Link href="/codex" className={linkClass('/codex')}>Codex</Link>
 
           {/* NEW */}
           <Link href="/studios" className={linkClass('/studios')}>Studios</Link>

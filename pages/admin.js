@@ -28,6 +28,9 @@ import StudioPagesTab from '@/components/admin/StudioPagesTab';
 // arrivals / upcoming stays dashboard
 import UpcomingStaysPanel from '@/components/admin/UpcomingStaysPanel';
 
+// Added for LoreTab integration
+import LoreTab from '@/components/admin/LoreTab';
+
 // little pill button for the tab nav
 const TabButton = ({ active, onClick, children }) => (
   <button
@@ -243,6 +246,7 @@ export default function Admin() {
     'users',
     'analytics',
     'events',
+    'archives', // Added for LoreTab integration
   ];
 
   return (
@@ -344,6 +348,8 @@ export default function Admin() {
         {activeTab === 'analytics' && <AnalyticsTab users={users} orders={orders} />}
 
         {activeTab === 'events' && <EventsTab events={events} refreshAll={refreshAll} />}
+
+        {activeTab === 'archives' && <LoreTab posts={posts} refreshAll={refreshAll} />}
       </div>
     </>
   );
