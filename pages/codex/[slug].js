@@ -93,7 +93,7 @@ export default function CodexEntry({ entry, products, media, books, relatedLore 
                   <div key={track.id} className="mt-4">
                     <div className="text-xs font-bold mb-2">{track.title}</div>
                     {embed || <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-500 text-xs hover:underline">Open Media</a>}
-                    <Link href={`/blog/${track.slug}`} className="block text-[10px] opacity-70 mt-1 hover:underline">Details →</Link>
+                    <Link href={`/blog/${track.slug || track.id}`} className="block text-[10px] opacity-70 mt-1 hover:underline">Details →</Link>
                   </div>
                 );
               })}
@@ -105,7 +105,7 @@ export default function CodexEntry({ entry, products, media, books, relatedLore 
             <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/60 backdrop-blur p-5">
               <h4 className="text-[11px] font-bold uppercase tracking-[0.2em] mb-4 opacity-60">Related Tomes</h4>
               {books.map(book => (
-                <Link key={book.id} href={`/publishing/${book.slug}`} className="block group mt-4">
+                <Link key={book.id} href={`/publishing/${book.slug || book.id}`} className="block group mt-4">
                   <img 
                     src={book.thumbnail_url || book.display_image || '/placeholder.png'} 
                     alt={book.name} 
@@ -123,7 +123,7 @@ export default function CodexEntry({ entry, products, media, books, relatedLore 
             <div className="space-y-6">
               <h4 className="text-[11px] font-bold uppercase tracking-[0.2em] opacity-60">Physical Artifacts</h4>
               {products.map(prod => (
-                <Link key={prod.id} href={`/designs/${prod.slug}`} className="block group">
+                <Link key={prod.id} href={`/designs/${prod.slug || prod.id}`} className="block group">
                   <div className="relative rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 hover:shadow-md transition">
                     <img 
                       src={prod.thumbnail_url || '/placeholder.png'} 
@@ -163,26 +163,43 @@ export async function getServerSideProps({ params }) {
 
   const prodSlugs = entry.metadata?.related_products || [];
   const mediaSlugs = entry.metadata?.related_media || [];
-  const bookSlugs = entry.metadata?.related_books || []; // NEW
+  const bookSlugs = entry.metadata?.related_books || [];
   const universeId = entry.metadata?.universe_id;
 
+  // Helper to fetch by id.in(slugs) - since related_* stores UUIDs (as strings)
+  const fetchByIds = async (table, ids) => {
+    if (!ids.length) return [];
+    const { data, error } = await supabase.from(table).select('*').in('id', ids);
+    if (error) {
+      console.error(`Error fetching ${table}:`, error);
+      return [];
+    }
+    return data || [];
+  };
+
   const [
-    { data: products },
-    { data: media },
-    { data: books }, // NEW
-    { data: relatedLore }
+    products,
+    media,
+    books,
+    relatedLoreData
   ] = await Promise.all([
-    supabase.from('products').select('*').in('slug', prodSlugs),
-    supabase.from('posts').select('*').in('slug', mediaSlugs),
-    supabase.from('products').select('*').in('slug', bookSlugs), // NEW
-    supabase.from('posts').select('*').eq('division', 'lore').eq('metadata->>universe_id', universeId).neq('id', entry.id).limit(5),
+    fetchByIds('products', prodSlugs),
+    fetchByIds('posts', mediaSlugs),
+    fetchByIds('products', bookSlugs),
+    supabase.from('posts')
+      .select('*')
+      .eq('division', 'lore')
+      .eq('metadata->>universe_id', universeId)
+      .neq('id', entry.id)
+      .limit(5)
+      .then(({ data }) => data || [])
   ]);
 
   return { props: { 
     entry, 
-    products: products || [], 
-    media: media || [], 
-    books: books || [], 
-    relatedLore: relatedLore || [] 
+    products, 
+    media, 
+    books, 
+    relatedLore: relatedLoreData 
   }};
 }
